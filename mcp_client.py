@@ -445,11 +445,25 @@ class MCPClient:
  
         return callable
     
-    async def drop_mcp_server(self, server_name: str) -> str:
-        """Remove an MCP server from the configuration and disconnect it."""
-        """
-        Handle slash commands for adding MCP servers and listing available functions.
-        """
+    async def handle_slash_commands(self, query: str) -> str:
+        """Handle slash commands for adding MCP servers and listing available functions."""
+        try:
+            command, *args = query.split()
+            if command == "/addMcpServer":
+                result = await self.add_mcp_configuration(" ".join(args))
+            elif command == "/list":
+                result = await self.list_mcp_servers()
+            elif command == "/functions" and args:
+                result = await self.list_server_functions(args[0])
+            elif command == "/dropMcpServer" and args:
+                result = await self.drop_mcp_server(args[0])
+            else:
+                result = "Error: Invalid command or missing arguments."
+        except Exception as e:
+            logging.error(f"Error handling slash commands: {e}")
+            return None
+
+        return result
         try:
             command, *args = query.split()
             if command == "/addMcpServer":
