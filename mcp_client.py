@@ -202,8 +202,7 @@ class MCPClient:
                 }
                 logging.debug(f"\nAdded tool: {tool.name}")
             
-            logging.info(f"\nConnected to server {server_name} with tools:", 
-                  [tool["name"] for tool in server_tools])
+            logging.info(f"\nConnected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
 
             self.connected = True
         logging.info("Done connecting to servers.")
