@@ -10,26 +10,10 @@ from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from pathlib import Path
-import sys
 import os
-import base64
-import asyncio
-
-# pydantic AI agent initialisations
-from typing_extensions import LiteralString, ParamSpec, TypedDict
-from pydantic_ai import Agent
-from pydantic_ai.exceptions import UnexpectedModelBehavior
-from pydantic_ai.messages import (
-    ModelMessage,
-    ModelMessagesTypeAdapter,
-    ModelRequest,
-    ModelResponse,
-    TextPart,
-    UserPromptPart,
-)
 
 # mcp client for pydantic ai
-from mcp_client import MCPClient, Deps, agent_loop
+from mcp_client import MCPClient, Deps, logging, agent_loop
 
 # Load environment variables
 load_dotenv()
@@ -41,13 +25,13 @@ supabase: Client = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
-    print("Starting up the FastAPI application...")
+    logging.debug("Starting up the FastAPI application...")
 
     # Check environment variables
     required_env_vars = ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "API_BEARER_TOKEN"]
     for var in required_env_vars:
         if not os.getenv(var):
-            print(f"Environment variable {var} is not set.")
+            logging.error(f"Environment variable {var} is not set.")
             raise RuntimeError(f"Environment variable {var} is required but not set.")
 
     # Initialize Supabase client
@@ -57,22 +41,22 @@ async def lifespan(app: FastAPI):
         os.getenv("SUPABASE_SERVICE_KEY")
     )
     if not supabase:
-        print("Supabase client is not initialized. Please check your environment variables.")
+        logging.error("Supabase client is not initialized. Please check your environment variables.")
         raise RuntimeError("Supabase client initialization failed.")
 
     # Initialize MCPClient and connect to server
     global mcp_client
     mcp_client = MCPClient()
     await mcp_client.connect_to_server()
-    print("Startup tasks completed successfully.")
+    logging.info("Startup tasks completed successfully.")
 
     # Yield control back to FastAPI
     yield
 
     # Shutdown logic
-    print("Shutting down the FastAPI application...")
-    await mcp_client.cleanup()  # Perform cleanup tasks here
-    print("Shutdown tasks completed successfully.")
+    logging.debug("Shutting down the FastAPI application...")
+    await mcp_client.cleanup()  
+    logging.info("Shutdown tasks completed successfully.")
 
 # Initialize FastAPI app with lifespan
 app = FastAPI(lifespan=lifespan)
@@ -160,7 +144,7 @@ async def thirdbrain_mcp_openai_agent(
         # Convert conversation history to format expected by agent
         messages = []
         for msg in conversation_history:
-            print("msg: ", msg)
+            logging.debug("msg: ", msg)
             msg_data = msg["message"]
             msg_type = msg_data["type"]
             msg_content = msg_data["content"]
@@ -173,7 +157,7 @@ async def thirdbrain_mcp_openai_agent(
                 #messages.append(TextPart(content=msg_content))
                 messages.append({"role": "assistant", "content": msg_content})
             else:
-                print("this was most likely an error message stored in the messages table")
+                logging.debug("this was most likely an error message stored in the messages table")
 
         # Store user's query
         await store_message(
@@ -183,14 +167,11 @@ async def thirdbrain_mcp_openai_agent(
         ) 
 
     except Exception as e:
-        print(f"Error processing request - part 1: {str(e)}")
+        logging.error(f"Error processing request - part 1: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
     
-
     # Get available tools and prepare them for the LLM
-    mcp_tools = await mcp_client.get_available_tools()
-    # Convert MCP tools into a format the LLM can understand and use
-    tools = mcp_client.llm_tools_schema(mcp_tools)
+    tools = await mcp_client.get_available_tools()
     
     # Initialize agent dependencies
     async with httpx.AsyncClient() as client: 
@@ -198,31 +179,20 @@ async def thirdbrain_mcp_openai_agent(
             deps = Deps(
                 client=client,
                 supabase=supabase,
-                session_id=request.session_id
+                session_id=request.session_id,
             )
-            
-            # Use the globally initialized mcp_client
             if request.query.startswith("/"):
-                command, *args = request.query.split()
-                if command == "/addMcpServer":
-                    result = await mcp_client.add_mcp_configuration(" ".join(args))
-                elif command == "/list":
-                    result =  await mcp_client.list_mcp_servers()
-                elif command == "/functions" and args:
-                    result =  await mcp_client.list_server_functions(args[0])
-                else:
-                    result =  "Error: Invalid command or missing arguments."
-            else:        
-                # Process the prompt and run agent loop
+                result = await mcp_client.handle_slash_commands(request.query)
+            else:     
                 result, messages = await agent_loop(request.query, tools, messages)
-                print("\nResult", result)
-                # print("\nMessages:", messages)
+            logging.info(f"Result: {result}")
+                
         except KeyboardInterrupt:
-            print("\nKeyboard interrupt detected.")
-            print("\nExiting...")
+            logging.debug("Keyboard interrupt detected.")
+            logging.debug("Exiting...")
             return
         except Exception as e:
-            print(f"Error mcp query in main - part 4: {str(e)}")
+            logging.error(f"Error in agent loop: {str(e)}")
             raise HTTPException(status_code=500, detail=f"Error processung query for MCP request: {str(e)}")
 
         try:

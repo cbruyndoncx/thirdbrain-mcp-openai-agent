@@ -3,19 +3,20 @@ import asyncio
 import json
 import logging
 import pprint
+
+from dotenv import load_dotenv
 from dataclasses import dataclass
 from typing import Optional, Dict, List, Union, Any
 from contextlib import AsyncExitStack
 from colorama import init, Fore, Style
+init(autoreset=True)  # Initialize colorama with autoreset=True
+
+from pydantic import BaseModel
+from pydantic_ai import Agent, RunContext 
+from pydantic_ai.tools import Tool, ToolDefinition
 
 from mcp import ClientSession, StdioServerParameters
-init(autoreset=True)  # Initialize colorama with autoreset=True
-from pydantic import BaseModel
-from pydantic_ai import Agent, RunContext
-from pydantic_ai.tools import Tool, ToolDefinition
 from mcp.client.stdio import stdio_client
-
-from dotenv import load_dotenv
 
 from httpx import AsyncClient
 from supabase import Client
@@ -23,25 +24,46 @@ from supabase import Client
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIModel
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# Get the logger used by uvicorn
+logging = logging.getLogger("uvicorn")
+logging.setLevel("INFO")
 
-load_dotenv()  # Load environment variables from .env
-llm = os.getenv('LLM_MODEL', 'gpt-4o-mini')
-openai_api_key = os.getenv('OPENAI_API_KEY')
-client = AsyncOpenAI(api_key=openai_api_key)
-model = OpenAIModel(
-    'gpt-4o-mini',
-    api_key=openai_api_key)
+# Load environment variables from .env
+load_dotenv()  
+# Get the selected provider
+selected = os.getenv("SELECTED")
 
-deepseek_api_key = os.getenv('DEEPSEEK_API_KEY')
-deepseek_url =  os.getenv('DEEPSEEK_URL')
-client = AsyncOpenAI( base_url=deepseek_url, api_key=deepseek_api_key)
+# Check if SELECTED is defined
+if not selected:
+    raise ValueError("SELECTED is not defined in the .env file.")
+
+# Resolve BASE_URL, API_KEY, and LLM_MODEL dynamically
+base_url = os.getenv(f"{selected}_URL")
+api_key = os.getenv(f"{selected}_API_KEY")
+llm_model = os.getenv(f"{selected}_MODEL")
+
+# Check if the resolved variables exist
+if not base_url:
+    raise ValueError(f"{selected}_URL is not defined in the .env file.")
+if not api_key:
+    raise ValueError(f"{selected}_API_KEY is not defined in the .env file.")
+if not llm_model:
+    raise ValueError(f"{selected}_MODEL is not defined in the .env file.")
+
+# Print the resolved values
+logging.debug(f"SELECTED: {selected}")
+logging.debug(f"BASE_URL: {base_url}")
+logging.debug(f"API_KEY: {api_key}")
+logging.debug(f"LLM_MODEL: {llm_model}")
+
+client = AsyncOpenAI( 
+    base_url=base_url,
+    api_key=api_key)
 model = OpenAIModel(
-    'deepseek-chat',
-    base_url=deepseek_url,
-    api_key=deepseek_api_key)
- 
+    llm_model,
+    base_url=base_url,
+    api_key=api_key)
+
 # System prompt that guides the LLM's behavior and capabilities
 # This helps the model understand its role and available tools
 SYSTEM_PROMPT = """You are a helpful assistant capable of accessing external functions and engaging in casual chat. Use the responses from these function calls to provide accurate and informative answers. The answers should be natural and hide the fact that you are using tools to access real-time information. Guide the user about available tools and their capabilities. Always utilize tools to access real-time information when required. Engage in a friendly manner to enhance the chat experience.
@@ -75,49 +97,48 @@ class MCPClient:
         self.available_tools = []
         self.tools = {}
         self.connected = False
+        self.config_file = 'mcp_config.json'
+        self.dynamic_tools: List[Tool] = []  # List to store dynamic pydantic tools
 
     async def connect_to_server(self):
         if self.connected:
             logging.info("Already connected to servers.")
             return
 
-        logging.debug("Loading config.json...")
+        logging.debug(f"Loading {self.config_file} ...")
         try:
-            with open('mcp_config.json') as f:
+            with open(self.config_file) as f:
                 config = json.load(f)
         except FileNotFoundError:
-            logging.error("mcp_config.json file not found.")
+            logging.error(f"{self.config_file} file not found.")
             return
         except json.JSONDecodeError:
-            logging.error("mcp_config.json is not a valid JSON file.")
+            logging.error(f"{self.config_file} is not a valid JSON file.")
             return
+        finally:
+            f.close()  # Ensure the file is always closed    
         
-        logging.debug("\nAvailable servers in config:", list(config['mcpServers'].keys()))
-        logging.debug("\nFull config content:", json.dumps(config, indent=2))
+        logging.debug("Available servers in config: ", list(config['mcpServers'].keys()))
+        logging.debug("Full config content: ", json.dumps(config, indent=2))
         
         # Connect to all servers in config
         for server_name, server_config in config['mcpServers'].items():
-            logging.debug(f"\nAttempting to load {server_name} server config...")
+            logging.debug(f"Attempting to load {server_name} server config...")
             logging.debug("Server config found:", json.dumps(server_config, indent=2))
             
             server_params = StdioServerParameters(
                 command=server_config['command'],
                 args=server_config['args'],
-                env=None
+                env=server_config.get('env'),
             )
-            logging.debug("\nCreated server parameters:", server_params)
-            logging.debug(f"Command: {server_params.command}")
-            logging.debug(f"Arguments: {server_params.args}")
-            logging.debug(f"Environment: {server_params.env}")
+            logging.debug("Created server parameters:", server_params)
            
             try:
+                # Create and store session with server name as key
                 stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
                 stdio, write = stdio_transport
                 session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
-                
                 await session.initialize()
-                
-                # Store session with server name as key
                 self.sessions[server_name] = session
                 
                 # Create and store an Agent for this server
@@ -139,12 +160,9 @@ class MCPClient:
                     "input_schema": tool.inputSchema
                 } for tool in response.tools]
             except Exception as e:
-                error_message = f"Failed to connect to server {server_name}: {str(e)}"
+                error_message = f"Failed to connect to and get tools from server {server_name}: {str(e)}"
                 logging.error(error_message)
                 return error_message
-
-            #for tool in server_tools:
-            #    logging.debug("Input Schema for Tool:", tool["name"], tool["input_schema"])
             
             # Add server's tools to overall available tools
             self.available_tools.extend(server_tools)
@@ -160,12 +178,13 @@ class MCPClient:
                     # Customize tool definition based on server context
                     tool_def.name = f"{server}__{tool_name}"
                     tool_def.description = f"Tool from {server} server: {tool.description}"
-                    logging.debug(tool_def.description)
+                    logging.info(tool_def.description)
                     return tool_def
 
                 async def tool_func(ctx: RunContext[Any], str_arg) -> str:
                     agent_response = await server_agent.run_sync(str_arg)
-                    logging.debug(f"\nServer agent response: {agent_response}")
+                    logging.debug(f"Server agent response: {agent_response}")
+                    logging.info(f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}")
                     return f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}"               
                 
                 # Long descriptions beyond 1023 are not supported with OpenAI,
@@ -179,6 +198,8 @@ class MCPClient:
                         tool.description = file_content
                     except Exception as e:
                         logging.error(f"An error occurred while reading the file: {e}")
+                    finally: 
+                        f.close
                 else:
                     logging.debug(f"File '{file_name}' not found. Using default description")
 
@@ -200,9 +221,9 @@ class MCPClient:
                         },
                     },
                 }
-                logging.debug(f"\nAdded tool: {tool.name}")
+                logging.debug(f"Added tool: {tool.name}")
             
-            logging.info(f"\nConnected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
+            logging.info(f"Connected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
 
             self.connected = True
         logging.info("Done connecting to servers.")
@@ -340,22 +361,58 @@ class MCPClient:
     async def get_available_tools(self) -> List[Any]:
         """
         Retrieve a list of available tools from the MCP server.
+        Simplify the schema for each tool to make it compatible with the OpenAI API.
         """
         if not self.sessions:
             raise RuntimeError("Not connected to MCP server")
 
-        tools = self.available_tools
-        #pprint.pprint(tools)
-
-        # Simplify the input schema 
-
-        # This is the first entry
-        # {'name': 'timezone__get_current_time', 'description': 'Get current time in a specific timezones', 'input_schema': {'type': 'object', 'properties': {'timezone': {'type': 'string', 'description': "IANA timezone name (e.g., 'America/New_York', 'Europe/London'). Use 'America/New_York' as local timezone if no timezone provided by the user."}}, 'required': ['timezone']}}, 
-        return tools
-        #_, tools_list = tools
-        #_, tools_list = tools_list
-        #return tools_list
     
+        def simplify_schema(schema):
+            """
+            Simplifies a JSON schema by removing unsupported constructs like 'allOf', 'oneOf', etc.,
+            and preserving the core structure and properties. Needed for pandoc to work with the LLM.
+
+            Args:
+                schema (dict): The original JSON schema.
+
+            Returns:
+                dict: A simplified JSON schema.
+            """
+            # Create a new schema with only the basic structure
+            simplified_schema = {
+                "type": "object",
+                "properties": schema.get("properties", {}),
+                "required": schema.get("required", []),
+                "additionalProperties": schema.get("additionalProperties", False)
+            }
+
+            # Remove unsupported constructs like 'allOf', 'oneOf', 'anyOf', 'not', 'enum' at the top level
+            for key in ["allOf", "oneOf", "anyOf", "not", "enum"]:
+                if key in simplified_schema:
+                    del simplified_schema[key]
+
+            return simplified_schema
+
+        return  {
+            tool['name']: {
+                "name": tool['name'],
+                "callable": self.call_tool(
+                    tool['name']
+                ),  # returns a callable function for the rpc call
+                "schema": {
+                    "type": "function",
+                    "function": {
+                        "name": tool['name'],
+                        "description": tool['description'][:1023],
+                        "parameters": simplify_schema(tool['input_schema'])
+                    },
+                },
+            }
+            for tool in self.available_tools
+            if tool['name']
+            != "xxx"  # Excludes xxx tool as it has an incorrect schema
+        }
+        
     def call_tool(self, server__tool_name: str) -> Any:
         """
         Create a callable function for a specific tool.
@@ -383,32 +440,31 @@ class MCPClient:
                 logging.debug("Timeout while calling MCP server")
                 return None
             except Exception as e:
-                logging.debug(f"Error calling MCP server: {e}")
+                logging.error(f"Error calling MCP server: {e}")
                 return None
  
         return callable
+    
+    async def handle_slash_commands(self, query) -> str:
+        """
+        Handle slash commands for adding MCP servers and listing available functions.
+        """
+        try:
+            command, *args = query.split()
+            if command == "/addMcpServer":
+                result = await self.add_mcp_configuration(" ".join(args))
+            elif command == "/list":
+                result =  await self.list_mcp_servers()
+            elif command == "/functions" and args:
+                result =  await self.list_server_functions(args[0])
+            else:
+                result =  "Error: Invalid command or missing arguments."
+        except Exception as e:
+            logging.error(f"Error handling slash commands: {e}")
+            return None
 
-    def llm_tools_schema(self, mcp_tools):
-        return  {
-            tool['name']: {
-                "name": tool['name'],
-                "callable": self.call_tool(
-                    tool['name']
-                ),  # returns a callable function for the rpc call
-                "schema": {
-                    "type": "function",
-                    "function": {
-                        "name": tool['name'],
-                        "description": tool['description'][:1023],
-                        "parameters": simplify_schema(tool['input_schema'])
-                    },
-                },
-            }
-            for tool in mcp_tools
-            if tool['name']
-            != "xxx"  # Excludes xxx tool as it has an incorrect schema
-        }
-
+        return result
+    
 async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     """
     Main interaction loop that processes user queries using the LLM and available tools.
@@ -423,6 +479,7 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
         tools: Dictionary of available tools and their schemas
         messages: List of messages to pass to the LLM, defaults to None
     """
+ 
     messages = (
         [
             {
@@ -442,13 +499,11 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     )
     # add user query to the messages list
     messages.append({"role": "user", "content": query})
-
-    import pprint
     pprint.pprint(messages)
 
     # Query LLM with the system prompt, user query, and available tools
     first_response = await client.chat.completions.create(
-        model=llm,
+        model=llm_model,
         messages=messages,
         tools=([t["schema"] for t in tools.values()] if len(tools) > 0 else None),
         max_tokens=4096,
@@ -508,7 +563,7 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
 
         # Query LLM with the user query and the tool results
         new_response = await client.chat.completions.create(
-            model=llm,
+            model=llm_model,
             messages=messages,
         )
  
@@ -527,46 +582,15 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     return new_response.choices[0].message.content, messages
 
 
-    
-def simplify_schema(schema):
-    """
-    Simplifies a JSON schema by removing unsupported constructs like 'allOf', 'oneOf', etc.,
-    and preserving the core structure and properties. Needed for pandoc to work with the LLM.
-
-    Args:
-        schema (dict): The original JSON schema.
-
-    Returns:
-        dict: A simplified JSON schema.
-    """
-    # Create a new schema with only the basic structure
-    simplified_schema = {
-        "type": "object",
-        "properties": schema.get("properties", {}),
-        "required": schema.get("required", []),
-        "additionalProperties": schema.get("additionalProperties", False)
-    }
-
-    # Remove unsupported constructs like 'allOf', 'oneOf', 'anyOf', 'not', 'enum' at the top level
-    for key in ["allOf", "oneOf", "anyOf", "not", "enum"]:
-        if key in simplified_schema:
-            del simplified_schema[key]
-
-    return simplified_schema
-
 async def main():
     """
     Main function that sets up the MCP server, initializes tools, and runs the interactive loop.
     """
     mcp_client = MCPClient()
     await mcp_client.connect_to_server()
-    logging.debug("Startup tasks completed successfully.")
 
-    # Get available database tools and prepare them for the LLM
-    mcp_tools = await mcp_client.get_available_tools()
-        # Convert MCP tools into a format the LLM can understand and use
-    tools = mcp_client.llm_tools_schema(mcp_tools)
-
+    tools = await mcp_client.get_available_tools()
+    
     # Start interactive prompt loop for user queries
     messages = None
     while True:
@@ -575,16 +599,18 @@ async def main():
             user_input = input("\nEnter your prompt (or 'quit' to exit): ")
             if user_input.lower() in ["quit", "exit", "q"]:
                 break
-
-            # Process the prompt and run agent loop
-            response, messages = await agent_loop(user_input, tools, messages)
-            logging.debug("\nResponse:", response)
-            # logging.debug("\nMessages:", messages)
+            if user_input.startswith("/"):
+                response = await mcp_client.handle_slash_commands(user_input)
+            else:
+                # Process the prompt and run agent loop
+                response, messages = await agent_loop(user_input, tools, messages)
+            logging.debug("Response:", response)
+            # logging.debug("Messages:", messages)
         except KeyboardInterrupt:
-            logging.debug("\nExiting...")
+            logging.debug("Exiting...")
             break
         except Exception as e:
-            logging.debug(f"\nError occurred: {e}")
+            logging.error(f"Error occurred: {e}")
  
     await mcp_client.cleanup()
 
