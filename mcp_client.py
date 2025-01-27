@@ -445,7 +445,7 @@ class MCPClient:
  
         return callable
     
-    async def drop_mcp_server(self, server_name: str) -> str:
+    async def handle_slash_commands(self, query: str) -> str:
         """Remove an MCP server from the configuration and disconnect it."""
         try:
             with open("mcp_config.json", "r") as f:
