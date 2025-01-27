@@ -445,7 +445,36 @@ class MCPClient:
  
         return callable
     
-    async def handle_slash_commands(self, query) -> str:
+    async def drop_mcp_server(self, server_name: str) -> str:
+        """Remove an MCP server from the configuration and disconnect it."""
+        try:
+            with open("mcp_config.json", "r") as f:
+                config = json.load(f)
+
+            if server_name not in config.get("mcpServers", {}):
+                return f"Error: Server '{server_name}' does not exist in the configuration."
+
+            # Remove the server from the configuration
+            del config["mcpServers"][server_name]
+
+            # Save the updated config back to the file
+            with open("mcp_config.json", "w") as f:
+                json.dump(config, f, indent=2)
+
+            # Disconnect the server if it is connected
+            if server_name in self.sessions:
+                await self.sessions[server_name].close()
+                del self.sessions[server_name]
+                del self.agents[server_name]
+
+            return f"Successfully removed and disconnected server '{server_name}'."
+
+        except FileNotFoundError:
+            return "Error: mcp_config.json file not found."
+        except json.JSONDecodeError:
+            return "Error: mcp_config.json is not a valid JSON file."
+        except Exception as e:
+            return f"Error removing MCP server: {str(e)}"
         """
         Handle slash commands for adding MCP servers and listing available functions.
         """
@@ -457,7 +486,8 @@ class MCPClient:
                 result =  await self.list_mcp_servers()
             elif command == "/functions" and args:
                 result =  await self.list_server_functions(args[0])
-            else:
+            elif command == "/dropMcpServer" and args:
+                result = await self.drop_mcp_server(args[0])
                 result =  "Error: Invalid command or missing arguments."
         except Exception as e:
             logging.error(f"Error handling slash commands: {e}")
