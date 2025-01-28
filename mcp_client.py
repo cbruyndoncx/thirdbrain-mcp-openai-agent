@@ -185,12 +185,8 @@ class MCPClient:
                 else:
                     logging.debug(f"File '{file_name}' not found. Using default description")
 
-                dynamic_tool = Tool(
-                    tool_func,
-                    prepare=prepare_tool,
-                    name=f"{server_name}__{tool.name}",
-                    description=tool.description
-                )
+                # Create corresponding dynamic pydantic tools
+                dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
                 self.tools[tool.name] = {
                     "name": tool.name,
                     "callable": self.call_tool(f"{server_name}__{tool.name}"),
@@ -484,6 +480,7 @@ class MCPClient:
             name=f"{server_name}__{tool.name}",
             description=tool.description
         )
+    async def handle_slash_commands(self, query: str) -> str:
         """Handle slash commands for adding MCP servers and listing available functions."""
         try:
             command, *args = query.split()
