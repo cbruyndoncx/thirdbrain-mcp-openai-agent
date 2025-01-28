@@ -226,7 +226,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set the logging level based on the argument
-    logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
+    logging_level = getattr(logging, args.log_level.upper())
     logging.getLogger("uvicorn").setLevel(logging_level)
     logging.getLogger("mcp_client").setLevel(logging_level)
 
