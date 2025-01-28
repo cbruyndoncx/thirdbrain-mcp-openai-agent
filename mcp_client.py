@@ -364,7 +364,7 @@ class MCPClient:
         except Exception as e:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
-    async def toggle_server_status(self, server_name: str, enable: bool) -> str:
+    async def cleanup(self) -> None:
         """Clean up resources."""
         logging.debug("Cleaning up resources...")
         await self.exit_stack.aclose()

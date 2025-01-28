@@ -1,8 +1,10 @@
 # Specific ThirdBrain_mcp_agent
 
-Add a new mcpServer by chat starting with mcpServer and valid json config, is saved in mcp_config.json
+Add a new mcpServer by chat starting with ```/addMcpServer``` and **valid json** config, is saved in mcp_config.json
 
-```mcpServer{"memory": {"command": "docker", "args": ["run", "-i", "--rm", "mcp/memory"]}}```
+```/addMcpServer {"memory": {"command": "docker", "args": ["run", "-i", "--rm", "mcp/memory"]}}```
+
+Remove an mcp server using```/dropMcpServer <name>``` 
 
 # mcp-proxy-pydantic-agent
 
@@ -12,6 +14,11 @@ and the exellent wip found at https://github.com/philschmid/mcp-openai-gemini-ll
 CAVEAT - it appears to be impossible to use the pydantic-ai agent system as parts of the tooling is async and other parts sync. 
 Tried but did not find a solution.
 
+And it is recognized as a bug still as of end of januari 2025
+https://github.com/pydantic/pydantic-ai/issues/149
+
+and is being worked on in major Agent rewrite as of 28 jan 25
+https://github.com/pydantic/pydantic-ai/pull/725
 
 # Base Sample Python Agent
 
