@@ -13,7 +13,7 @@
       "args": [
         "./weather-server-python/src/weather/server.py"
       ],
-      "enabled": true
+      "enable": true
     },
     "sequentialthinking": {
       "command": "docker",

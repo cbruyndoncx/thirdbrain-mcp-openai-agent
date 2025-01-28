@@ -121,7 +121,7 @@ class MCPClient:
         
         # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
-            if server_config.get("enabled", True):
+            if server_config.get("enable", True):
                 logging.debug(f"Attempting to load {server_name} server config...")
                 logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
                 
@@ -340,7 +340,7 @@ class MCPClient:
             # Filter enabled servers
             enabled_servers = [
                 server_name for server_name, server_config in config.get("mcpServers", {}).items()
-                if server_config.get("enabled", True)
+                if server_config.get("enable", True)
             ]
             suggestion = "/connect_to_server_with_config <server_name>"
             return f"Enabled servers: {', '.join(enabled_servers)}. Next command suggestion: {suggestion}"
@@ -389,7 +389,7 @@ class MCPClient:
                     continue
 
                 # Update the enabled status
-                config["mcpServers"][server_name]["enabled"] = enable
+                config["mcpServers"][server_name]["enable"] = enable
                 status = "enabled" if enable else "disabled"
                 results.append(f"Successfully {status} server '{server_name}'.")
 
