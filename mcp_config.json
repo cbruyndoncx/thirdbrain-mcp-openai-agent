@@ -12,7 +12,8 @@
       "command": "python",
       "args": [
         "./weather-server-python/src/weather/server.py"
-      ]
+      ],
+      "enabled": true
     },
     "sequentialthinking": {
       "command": "docker",
@@ -21,7 +22,8 @@
         "--rm",
         "-i",
         "mcp/sequentialthinking"
-      ]
+      ],
+      "enabled": true
     },
     "memory": {
       "command": "docker",
@@ -31,7 +33,8 @@
         "--rm",
         "mcp/memory"
       ],
-      "env": null
+      "env": null,
+      "enabled": true
     },
     "fetch": {
       "command": "docker",
@@ -41,7 +44,8 @@
         "--rm",
         "mcp/fetch"
       ],
-      "env": null
+      "env": null,
+      "enabled": true
     },
     "npx-service": {
       "command": "docker",
@@ -51,8 +55,8 @@
         "npx-service",
         "https://github.com/cbruyndoncx/mcp-rtfm.git"
       ],
-      "env": null
-    },
-    "enabled": true
+      "env": null,
+      "enabled": true
+    }
   }
 }
