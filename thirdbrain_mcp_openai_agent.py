@@ -222,7 +222,7 @@ if __name__ == "__main__":
 
     # Parse command-line arguments
     parser = argparse.ArgumentParser(description="Run the ThirdBrain MCP OpenAI Agent.")
-    parser.add_argument("--log-level", type=str, default="INFO", help="Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+    parser.add_argument("--log-level", type=str, default="DEBUG", help="Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
     args = parser.parse_args()
 
     # Set the logging level based on the argument
