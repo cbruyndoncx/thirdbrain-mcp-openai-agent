@@ -260,7 +260,7 @@ class MCPClient:
                 "command": server_config["command"],
                 "args": server_config["args"],
                 "env": server_config.get("env"),  # Optional field
-                "enabled": server_config.get("enabled", True)  # Default to True if not specified
+                "enable": server_config.get("enable", True)  # Default to True if not specified
             }
 
             # Save the updated config back to the file
