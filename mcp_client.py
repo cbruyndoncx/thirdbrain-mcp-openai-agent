@@ -121,6 +121,11 @@ class MCPClient:
         
         # Connect to all servers in config
         for server_name, server_config in config['mcpServers'].items():
+            # Check if the server is enabled
+            if not server_config.get("enabled", True):
+                logging.info(f"Server {server_name} is disabled. Skipping connection.")
+                continue
+
             logging.debug(f"Attempting to load {server_name} server config...")
             logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
             
@@ -249,14 +254,15 @@ class MCPClient:
             if server_name in config.get("mcpServers", {}):
                 return f"Error: Server '{server_name}' already exists in the configuration."
 
-            # Add the new server configuration
+            # Add the new server configuration with default enabled status
             if "mcpServers" not in config:
                 config["mcpServers"] = {}
 
             config["mcpServers"][server_name] = {
                 "command": server_config["command"],
                 "args": server_config["args"],
-                "env": server_config.get("env")  # Optional field
+                "env": server_config.get("env"),  # Optional field
+                "enabled": server_config.get("enabled", True)  # Default to True if not specified
             }
 
             # Save the updated config back to the file
@@ -358,7 +364,31 @@ class MCPClient:
         except Exception as e:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
-    async def cleanup(self) -> None:
+    async def toggle_server_status(self, server_name: str, enable: bool) -> str:
+        """Enable or disable a specific MCP server."""
+        try:
+            with open("mcp_config.json", "r") as f:
+                config = json.load(f)
+
+            if server_name not in config.get("mcpServers", {}):
+                return f"Error: Server '{server_name}' does not exist in the configuration."
+
+            # Update the enabled status
+            config["mcpServers"][server_name]["enabled"] = enable
+
+            # Save the updated config back to the file
+            with open("mcp_config.json", "w") as f:
+                json.dump(config, f, indent=2)
+
+            status = "enabled" if enable else "disabled"
+            return f"Successfully {status} server '{server_name}'."
+
+        except FileNotFoundError:
+            return "Error: mcp_config.json file not found."
+        except json.JSONDecodeError:
+            return "Error: mcp_config.json is not a valid JSON file."
+        except Exception as e:
+            return f"Error toggling server status: {str(e)}"
         """Clean up resources."""
         logging.debug("Cleaning up resources...")
         await self.exit_stack.aclose()
@@ -486,7 +516,10 @@ class MCPClient:
             command, *args = query.split()
             if command == "/addMcpServer":
                 result = await self.add_mcp_configuration(" ".join(args))
-            elif command == "/list":
+            elif command == "/enable" and args:
+                result = await self.toggle_server_status(args[0], True)
+            elif command == "/disable" and args:
+                result = await self.toggle_server_status(args[0], False)
                 result = await self.list_mcp_servers()
             elif command == "/functions" and args:
                 result = await self.list_server_functions(args[0])

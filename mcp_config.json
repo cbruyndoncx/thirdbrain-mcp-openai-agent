@@ -52,6 +52,7 @@
         "https://github.com/cbruyndoncx/mcp-rtfm.git"
       ],
       "env": null
-    }
+    },
+    "enabled": true
   }
 }
