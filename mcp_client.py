@@ -365,6 +365,15 @@ class MCPClient:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
     async def toggle_server_status(self, server_name: str, enable: bool) -> str:
+        """Clean up resources."""
+        logging.debug("Cleaning up resources...")
+        await self.exit_stack.aclose()
+        self.sessions.clear()
+        self.available_tools.clear()
+        self.connected = False
+        logging.info("Cleanup completed.")
+
+    async def toggle_server_status(self, server_name: str, enable: bool) -> str:
         """Enable or disable a specific MCP server."""
         try:
             with open("mcp_config.json", "r") as f:
@@ -516,6 +525,8 @@ class MCPClient:
             command, *args = query.split()
             if command == "/addMcpServer":
                 result = await self.add_mcp_configuration(" ".join(args))
+            elif command == "/list":
+                result = await self.list_mcp_servers()
             elif command == "/enable" and args:
                 result = await self.toggle_server_status(args[0], True)
             elif command == "/disable" and args:
