@@ -243,7 +243,7 @@ class MCPClient:
 
             # Load the existing config
             try:
-                with open("mcp_config.json", "r") as f:
+                with open(self.config_file, "r") as f:
                     config = json.load(f)
             except FileNotFoundError:
                 return "Error: mcp_config.json file not found."
@@ -266,7 +266,7 @@ class MCPClient:
             }
 
             # Save the updated config back to the file
-            with open("mcp_config.json", "w") as f:
+            with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
             # Connect to the new server
@@ -284,7 +284,7 @@ class MCPClient:
     async def drop_mcp_server(self, server_name: str) -> str:
          """Remove an MCP server from the configuration and disconnect it."""                                                            
          try:                                                                                                                            
-             with open("mcp_config.json", "r") as f:                                                                                     
+             with open(self.config_file, "r") as f:                                                                                     
                  config = json.load(f)                                                                                                   
                                                                                                                                          
              if server_name not in config.get("mcpServers", {}):                                                                         
@@ -294,7 +294,7 @@ class MCPClient:
              del config["mcpServers"][server_name]                                                                                       
                                                                                                                                          
              # Save the updated config back to the file                                                                                  
-             with open("mcp_config.json", "w") as f:                                                                                     
+             with open(self.config_file, "w") as f:                                                                                     
                  json.dump(config, f, indent=2)                                                                                          
                                                                                                                                          
              # Disconnect the server if it is connected                                                                                  
@@ -337,7 +337,7 @@ class MCPClient:
     async def list_mcp_servers(self) -> str:
         """List all MCP servers in the configuration."""
         try:
-            with open("mcp_config.json", "r") as f:
+            with open(self.config_file, "r") as f:
                 config = json.load(f)
             servers = config.get("mcpServers", {}).keys()
             return "MCP Servers: " + ", ".join(servers)
@@ -376,7 +376,7 @@ class MCPClient:
     async def toggle_server_status(self, server_name: str, enable: bool) -> str:
         """Enable or disable a specific MCP server."""
         try:
-            with open("mcp_config.json", "r") as f:
+            with open(self.config_file, "r") as f:
                 config = json.load(f)
 
             if server_name not in config.get("mcpServers", {}):
@@ -386,7 +386,7 @@ class MCPClient:
             config["mcpServers"][server_name]["enabled"] = enable
 
             # Save the updated config back to the file
-            with open("mcp_config.json", "w") as f:
+            with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
             status = "enabled" if enable else "disabled"
