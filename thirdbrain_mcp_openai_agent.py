@@ -227,6 +227,7 @@ if __name__ == "__main__":
 
     # Set the logging level based on the argument
     logging_level = getattr(logging, args.log_level.upper())
+    logging.basicConfig(level=logging_level)
     logging.getLogger("uvicorn").setLevel(logging_level)
     logging.getLogger("mcp_client").setLevel(logging_level)
 
