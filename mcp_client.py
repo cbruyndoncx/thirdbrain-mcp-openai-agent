@@ -296,6 +296,38 @@ class MCPClient:
             return f"Error adding MCP configuration: {str(e)}"
         return None
 
+
+    async def drop_mcp_server(self, server_name: str) -> str:                                                                           
+         """Remove an MCP server from the configuration and disconnect it."""                                                            
+         try:                                                                                                                            
+             with open("mcp_config.json", "r") as f:                                                                                     
+                 config = json.load(f)                                                                                                   
+                                                                                                                                         
+             if server_name not in config.get("mcpServers", {}):                                                                         
+                 return f"Error: Server '{server_name}' does not exist in the configuration."                                            
+                                                                                                                                         
+             # Remove the server from the configuration                                                                                  
+             del config["mcpServers"][server_name]                                                                                       
+                                                                                                                                         
+             # Save the updated config back to the file                                                                                  
+             with open("mcp_config.json", "w") as f:                                                                                     
+                 json.dump(config, f, indent=2)                                                                                          
+                                                                                                                                         
+             # Disconnect the server if it is connected                                                                                  
+             if server_name in self.sessions:                                                                                            
+                 await self.sessions[server_name].close()                                                                                
+                 del self.sessions[server_name]                                                                                          
+                 del self.agents[server_name]                                                                                            
+                                                                                                                                         
+             return f"Successfully removed and disconnected server '{server_name}'."                                                     
+                                                                                                                                         
+         except FileNotFoundError:                                                                                                       
+             return "Error: mcp_config.json file not found."                                                                             
+         except json.JSONDecodeError:                                                                                                    
+             return "Error: mcp_config.json is not a valid JSON file."                                                                   
+         except Exception as e:                                                                                                          
+             return f"Error removing MCP server: {str(e)}"      
+         
     async def connect_to_server_with_config(self, server_name: str, server_config: dict):
         """Connect to a server using the provided configuration."""
         server_params = StdioServerParameters(
@@ -459,22 +491,6 @@ class MCPClient:
                 result = await self.drop_mcp_server(args[0])
             else:
                 result = "Error: Invalid command or missing arguments."
-        except Exception as e:
-            logging.error(f"Error handling slash commands: {e}")
-            return None
-
-        return result
-        try:
-            command, *args = query.split()
-            if command == "/addMcpServer":
-                result = await self.add_mcp_configuration(" ".join(args))
-            elif command == "/list":
-                result =  await self.list_mcp_servers()
-            elif command == "/functions" and args:
-                result =  await self.list_server_functions(args[0])
-            elif command == "/dropMcpServer" and args:
-                result = await self.drop_mcp_server(args[0])
-                result =  "Error: Invalid command or missing arguments."
         except Exception as e:
             logging.error(f"Error handling slash commands: {e}")
             return None
