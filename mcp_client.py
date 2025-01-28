@@ -20,48 +20,68 @@ from mcp.client.stdio import stdio_client
 
 from httpx import AsyncClient
 from supabase import Client
-
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIModel
 
 logging.getLogger("uvicorn")
 logging.basicConfig(level="INFO") 
 
-# Load environment variables from .env
-load_dotenv()  
-# Get the selected provider
-selected = os.getenv("SELECTED")
+def get_client_and_model() -> tuple[AsyncOpenAI, OpenAIModel, str]:
+    """
+    Load environment variables, resolve provider-specific configuration,
+    and return the client and model.
 
-# Check if SELECTED is defined
-if not selected:
-    raise ValueError("SELECTED is not defined in the .env file.")
+    Returns:
+        tuple[AsyncOpenAI, OpenAIModel]: A tuple containing the client and model.
 
-# Resolve BASE_URL, API_KEY, and LLM_MODEL dynamically
-base_url = os.getenv(f"{selected}_URL")
-api_key = os.getenv(f"{selected}_API_KEY")
-llm_model = os.getenv(f"{selected}_MODEL")
+    Raises:
+        ValueError: If any required environment variable is missing.
+    """
 
-# Check if the resolved variables exist
-if not base_url:
-    raise ValueError(f"{selected}_URL is not defined in the .env file.")
-if not api_key:
-    raise ValueError(f"{selected}_API_KEY is not defined in the .env file.")
-if not llm_model:
-    raise ValueError(f"{selected}_MODEL is not defined in the .env file.")
+    # Load environment variables from .env
+    load_dotenv()  
+    # Get the selected provider
+    selected = os.getenv("SELECTED")
 
-# Print the resolved values
-logging.debug(f"SELECTED: {selected}")
-logging.debug(f"BASE_URL: {base_url}")
-logging.debug(f"API_KEY: {api_key}")
-logging.debug(f"LLM_MODEL: {llm_model}")
+    # Check if SELECTED is defined
+    if not selected:
+        raise ValueError("SELECTED is not defined in the .env file.")
 
-client = AsyncOpenAI( 
-    base_url=base_url,
-    api_key=api_key)
-model = OpenAIModel(
-    llm_model,
-    base_url=base_url,
-    api_key=api_key)
+    # Resolve BASE_URL, API_KEY, and LLM_MODEL dynamically
+    base_url = os.getenv(f"{selected}_URL")
+    api_key = os.getenv(f"{selected}_API_KEY")
+    llm_model = os.getenv(f"{selected}_MODEL")
+
+    # Check if the resolved variables exist
+    if not base_url:
+        raise ValueError(f"{selected}_URL is not defined in the .env file.")
+    if not api_key:
+        raise ValueError(f"{selected}_API_KEY is not defined in the .env file.")
+    if not llm_model:
+        raise ValueError(f"{selected}_MODEL is not defined in the .env file.")
+
+    # Print the resolved values
+    logging.debug(f"SELECTED: {selected}")
+    logging.debug(f"BASE_URL: {base_url}")
+    logging.debug(f"API_KEY: {api_key}")
+    logging.debug(f"LLM_MODEL: {llm_model}")
+
+    client = AsyncOpenAI( 
+        base_url=base_url,
+        api_key=api_key)
+    
+    model = OpenAIModel(
+        llm_model,
+        base_url=base_url,
+        api_key=api_key)
+    
+    return client, model, llm_model
+    
+try:
+    client, model, llm_model = get_client_and_model()
+    logging.info("Client and model initialized successfully.")
+except ValueError as e:
+    logging.error(f"Failed to initialize client and model: {e}")
 
 # System prompt that guides the LLM's behavior and capabilities
 # This helps the model understand its role and available tools
@@ -108,7 +128,7 @@ class MCPClient:
         try:
             with open(self.config_file) as f:
                 config = json.load(f)
-                print("Loaded configuration:", json.dumps(config, indent=2))
+                logging.debug("Loaded configuration: %s", json.dumps(config, indent=2))
         except FileNotFoundError:
             logging.error(f"{self.config_file} file not found.")
             return
@@ -346,12 +366,16 @@ class MCPClient:
                 server_name for server_name, server_config in config.get("mcpServers", {}).items()
                 if server_config.get("enable", True)
             ]
-            suggestion = "/connect_to_server_with_config <server_name>"
-            return f"Enabled servers: {', '.join(enabled_servers)}. Next command suggestion: {suggestion}"
+            disabled_servers = [
+                server_name for server_name, server_config in config.get("mcpServers", {}).items()
+                if not server_config.get("enable", True)
+            ]
+            suggestion = "\n - Use /functions &lt;server_name&gt; to list functions provided by a specific server."
+            return f"**Enabled servers:** \n 1. {'\n 1. '.join(enabled_servers)}. \n\nDisabled servers: {', '.join(disabled_servers)}. \nNext command suggestion: {suggestion}"
         except FileNotFoundError:
-            return "Error: mcp_config.json file not found."
+            return f"Error: {self.config_file} file not found."
         except json.JSONDecodeError:
-            return "Error: mcp_config.json is not a valid JSON file."
+            return f"Error: {self.config_file} is not a valid JSON file."
 
     async def list_server_functions(self, server_name: str) -> str:
         """List all functions provided by a specific MCP server."""
@@ -363,11 +387,12 @@ class MCPClient:
             for tool in response.tools:
                 parameters = tool.inputSchema.get('properties', {})
                 functions.append({
-                    "name": tool.name,
+                    "function name": tool.name,
                     "parameters": parameters
                 })
-            formatted_output = json.dumps(functions, indent=2)
-            return f"Functions for server '{server_name}':\n```\n{formatted_output}\n```"
+            #formatted_output = json.dumps(functions, indent=2)
+            return f"Functions for server '{server_name}':\n" + json_to_markdown(functions)
+
         except Exception as e:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
@@ -670,6 +695,27 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     # Return the LLM response and messages
     return new_response.choices[0].message.content, messages
 
+def json_to_markdown(data, indent=0):
+    markdown = ""
+    prefix = "  " * indent  # Indentation for nested structures
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            markdown += f"{prefix}- **{key}**: "
+            if isinstance(value, (dict, list)):
+                markdown += "\n" + json_to_markdown(value, indent + 1)
+            else:
+                markdown += f"{value}\n"
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, (dict, list)):
+                markdown += f"{prefix}- \n{json_to_markdown(item, indent + 1)}"
+            else:
+                markdown += f"{prefix}- {item}\n"
+    else:
+        markdown += f"{prefix}- {data}\n"
+
+    return markdown
 
 async def main():
     """

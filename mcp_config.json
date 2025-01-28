@@ -23,7 +23,7 @@
         "-i",
         "mcp/sequentialthinking"
       ],
-      "enable": true
+      "enable": false
     },
     "memory": {
       "command": "docker",
@@ -47,16 +47,20 @@
       "env": null,
       "enable": true
     },
-    "npx-service": {
+    "github": {
       "command": "docker",
       "args": [
         "run",
         "-i",
-        "npx-service",
-        "https://github.com/cbruyndoncx/mcp-rtfm.git"
+        "--rm",
+        "-e",
+        "GITHUB_PERSONAL_ACCESS_TOKEN",
+        "mcp/github"
       ],
-      "env": null,
-      "enable": false
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "<your token>"
+      },
+      "enable": true
     }
   }
 }
