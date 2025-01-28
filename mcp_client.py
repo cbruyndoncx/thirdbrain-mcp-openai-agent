@@ -108,6 +108,7 @@ class MCPClient:
         try:
             with open(self.config_file) as f:
                 config = json.load(f)
+                print("Loaded configuration:", json.dumps(config, indent=2))
         except FileNotFoundError:
             logging.error(f"{self.config_file} file not found.")
             return
@@ -121,6 +122,7 @@ class MCPClient:
         # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
             logging.debug(f"Processing {server_name}  %s", json.dumps(server_config, indent=2))
+            print(f"Processing server configuration for {server_name}:", json.dumps(server_config, indent=2))
             if server_config.get("enable", False):
                 logging.debug(f"Attempting to load {server_name} server config...")
                 logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
@@ -221,6 +223,7 @@ class MCPClient:
             # Extract the JSON part of the query
             config_str = query
             new_config = json.loads(config_str)
+            print("New configuration to add:", json.dumps(new_config, indent=2))
 
             # Validate the new configuration
             if not isinstance(new_config, dict):
