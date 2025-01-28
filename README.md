@@ -83,8 +83,7 @@ python mcp_client.py
 ### Slash commands within the chatbot (agent and cli)
 
 The management of the mcp_config.json file is done through slash commands. We want this to be really deterministic when managing the configuration.
-![Example Image](images/example.jpg)
-[List mcp servers and request functions supported by mcp server](docs/ThirdBrain-mcp-openai-agent-Command-list-functions.png)
+![List mcp servers and request functions supported by mcp server](docs/ThirdBrain-mcp-openai-agent-Command-list-functions.png)
 
 #### /list
 Lists all enabled and disabled mcp servers known on the system
