@@ -227,11 +227,15 @@ if __name__ == "__main__":
 
     # Set the logging level based on the argument
     logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
-    print(f"Parsed log level: {args.log_level.upper()} -> {logging_level}")
-    logging.basicConfig(level=logging_level)
-    print(f"Logging level set to: {logging.getLevelName(logging_level)}")
-    logging.getLogger("uvicorn").setLevel(logging_level)
+    logging.info(f"Parsed log level: {args.log_level.upper()} -> {logging_level}")
+    
+    
+    #logging.getLogger("uvicorn").setLevel(logging_level)
     logging.getLogger("mcp_client").setLevel(logging_level)
+
+    logging.basicConfig(level=logging_level)
+    logging.info(f"Logging level set to: {logging.getLevelName(logging_level)}")
+   
 
     # Run the server
     uvicorn.run(app, host="0.0.0.0", port=8001)
