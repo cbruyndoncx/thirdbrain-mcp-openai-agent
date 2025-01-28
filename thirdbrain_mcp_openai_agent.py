@@ -218,23 +218,13 @@ async def thirdbrain_mcp_openai_agent(
 
 if __name__ == "__main__":
     import uvicorn
-    import argparse
-
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser(description="Run the ThirdBrain MCP OpenAI Agent.")
-    parser.add_argument("--log-level", type=str, default="DEBUG", help="Set the logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)")
-    args = parser.parse_args()
-
-    # Set the logging level based on the argument
-    logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
-    logging.info(f"Parsed log level: {args.log_level.upper()} -> {logging_level}")
     
     
     #logging.getLogger("uvicorn").setLevel(logging_level)
-    logging.getLogger("mcp_client").setLevel(logging_level)
+    logging.getLogger("mcp_client").setLevel(logging.DEBUG)
 
-    logging.basicConfig(level=logging_level)
-    logging.info(f"Logging level set to: {logging.getLevelName(logging_level)}")
+    logging.basicConfig(level=logging.DEBUG)
+    logging.info("Logging level set to: DEBUG")
    
 
     # Run the server
