@@ -339,8 +339,13 @@ class MCPClient:
         try:
             with open(self.config_file, "r") as f:
                 config = json.load(f)
-            servers = config.get("mcpServers", {}).keys()
-            return "MCP Servers: " + ", ".join(servers)
+            # Filter enabled servers
+            enabled_servers = [
+                server_name for server_name, server_config in config.get("mcpServers", {}).items()
+                if server_config.get("enabled", True)
+            ]
+            suggestion = "/connect_to_server_with_config <server_name>"
+            return f"Enabled servers: {', '.join(enabled_servers)}. Next command suggestion: {suggestion}"
         except FileNotFoundError:
             return "Error: mcp_config.json file not found."
         except json.JSONDecodeError:
@@ -373,24 +378,28 @@ class MCPClient:
         self.connected = False
         logging.info("Cleanup completed.")
 
-    async def toggle_server_status(self, server_name: str, enable: bool) -> str:
-        """Enable or disable a specific MCP server."""
+    async def toggle_server_status(self, server_names: List[str], enable: bool) -> str:
+        """Enable or disable specific MCP servers."""
         try:
             with open(self.config_file, "r") as f:
                 config = json.load(f)
 
-            if server_name not in config.get("mcpServers", {}):
-                return f"Error: Server '{server_name}' does not exist in the configuration."
+            results = []
+            for server_name in server_names:
+                if server_name not in config.get("mcpServers", {}):
+                    results.append(f"Error: Server '{server_name}' does not exist in the configuration.")
+                    continue
 
-            # Update the enabled status
-            config["mcpServers"][server_name]["enabled"] = enable
+                # Update the enabled status
+                config["mcpServers"][server_name]["enabled"] = enable
+                status = "enabled" if enable else "disabled"
+                results.append(f"Successfully {status} server '{server_name}'.")
 
             # Save the updated config back to the file
             with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
-            status = "enabled" if enable else "disabled"
-            return f"Successfully {status} server '{server_name}'."
+            return "\n".join(results)
 
         except FileNotFoundError:
             return "Error: mcp_config.json file not found."
@@ -528,10 +537,9 @@ class MCPClient:
             elif command == "/list":
                 result = await self.list_mcp_servers()
             elif command == "/enable" and args:
-                result = await self.toggle_server_status(args[0], True)
+                result = await self.toggle_server_status(args, True)  # Pass list of server names
             elif command == "/disable" and args:
-                result = await self.toggle_server_status(args[0], False)
-                result = await self.list_mcp_servers()
+                result = await self.toggle_server_status(args, False)  # Pass list of server names
             elif command == "/functions" and args:
                 result = await self.list_server_functions(args[0])
             elif command == "/dropMcpServer" and args:
