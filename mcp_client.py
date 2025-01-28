@@ -24,8 +24,8 @@ from supabase import Client
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIModel
 
-# Get the logger used by uvicorn
-logging = logging.getLogger("uvicorn")
+logging.getLogger("uvicorn")
+logging.basicConfig(level="INFO") 
 
 # Load environment variables from .env
 load_dotenv()  
