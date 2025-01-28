@@ -131,7 +131,7 @@ class MCPClient:
                     args=server_config['args'],
                     env=server_config.get('env'),
                 )
-                logging.debug("Created server parameters:", server_params)
+                logging.debug("Created server parameters: %s",  json.dumps(server_params, indent=2))
                
                 try:
                     # Create and store session with server name as key
