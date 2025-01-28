@@ -26,7 +26,7 @@ from pydantic_ai.models.openai import OpenAIModel
 
 # Get the logger used by uvicorn
 logging = logging.getLogger("uvicorn")
-print(f"Logging level in MCPClient: {logging.getLevelName(logging.getLogger().getEffectiveLevel())}")
+print(f"Logging level in MCPClient: {logging.getLevelName(logging.getLogger('uvicorn').getEffectiveLevel())}")
 
 # Load environment variables from .env
 load_dotenv()  
