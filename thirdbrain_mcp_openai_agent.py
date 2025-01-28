@@ -170,6 +170,7 @@ async def thirdbrain_mcp_openai_agent(
         logging.error(f"Error processing request - part 1: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
     
+
     # Get available tools and prepare them for the LLM
     tools = await mcp_client.get_available_tools()
     
@@ -217,5 +218,6 @@ async def thirdbrain_mcp_openai_agent(
 
 if __name__ == "__main__":
     import uvicorn
-    # Feel free to change the port here if you need
+
+    # Run the server
     uvicorn.run(app, host="0.0.0.0", port=8001)

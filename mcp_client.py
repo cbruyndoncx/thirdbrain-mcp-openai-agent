@@ -20,49 +20,68 @@ from mcp.client.stdio import stdio_client
 
 from httpx import AsyncClient
 from supabase import Client
-
 from openai import AsyncOpenAI
 from pydantic_ai.models.openai import OpenAIModel
 
-# Get the logger used by uvicorn
-logging = logging.getLogger("uvicorn")
-logging.setLevel("INFO")
+logging.getLogger("uvicorn")
+logging.basicConfig(level="INFO") 
 
-# Load environment variables from .env
-load_dotenv()  
-# Get the selected provider
-selected = os.getenv("SELECTED")
+def get_client_and_model() -> tuple[AsyncOpenAI, OpenAIModel, str]:
+    """
+    Load environment variables, resolve provider-specific configuration,
+    and return the client and model.
 
-# Check if SELECTED is defined
-if not selected:
-    raise ValueError("SELECTED is not defined in the .env file.")
+    Returns:
+        tuple[AsyncOpenAI, OpenAIModel]: A tuple containing the client and model.
 
-# Resolve BASE_URL, API_KEY, and LLM_MODEL dynamically
-base_url = os.getenv(f"{selected}_URL")
-api_key = os.getenv(f"{selected}_API_KEY")
-llm_model = os.getenv(f"{selected}_MODEL")
+    Raises:
+        ValueError: If any required environment variable is missing.
+    """
 
-# Check if the resolved variables exist
-if not base_url:
-    raise ValueError(f"{selected}_URL is not defined in the .env file.")
-if not api_key:
-    raise ValueError(f"{selected}_API_KEY is not defined in the .env file.")
-if not llm_model:
-    raise ValueError(f"{selected}_MODEL is not defined in the .env file.")
+    # Load environment variables from .env
+    load_dotenv()  
+    # Get the selected provider
+    selected = os.getenv("SELECTED")
 
-# Print the resolved values
-logging.debug(f"SELECTED: {selected}")
-logging.debug(f"BASE_URL: {base_url}")
-logging.debug(f"API_KEY: {api_key}")
-logging.debug(f"LLM_MODEL: {llm_model}")
+    # Check if SELECTED is defined
+    if not selected:
+        raise ValueError("SELECTED is not defined in the .env file.")
 
-client = AsyncOpenAI( 
-    base_url=base_url,
-    api_key=api_key)
-model = OpenAIModel(
-    llm_model,
-    base_url=base_url,
-    api_key=api_key)
+    # Resolve BASE_URL, API_KEY, and LLM_MODEL dynamically
+    base_url = os.getenv(f"{selected}_URL")
+    api_key = os.getenv(f"{selected}_API_KEY")
+    llm_model = os.getenv(f"{selected}_MODEL")
+
+    # Check if the resolved variables exist
+    if not base_url:
+        raise ValueError(f"{selected}_URL is not defined in the .env file.")
+    if not api_key:
+        raise ValueError(f"{selected}_API_KEY is not defined in the .env file.")
+    if not llm_model:
+        raise ValueError(f"{selected}_MODEL is not defined in the .env file.")
+
+    # Print the resolved values
+    logging.debug(f"SELECTED: {selected}")
+    logging.debug(f"BASE_URL: {base_url}")
+    logging.debug(f"API_KEY: {api_key}")
+    logging.debug(f"LLM_MODEL: {llm_model}")
+
+    client = AsyncOpenAI( 
+        base_url=base_url,
+        api_key=api_key)
+    
+    model = OpenAIModel(
+        llm_model,
+        base_url=base_url,
+        api_key=api_key)
+    
+    return client, model, llm_model
+    
+try:
+    client, model, llm_model = get_client_and_model()
+    logging.info("Client and model initialized successfully.")
+except ValueError as e:
+    logging.error(f"Failed to initialize client and model: {e}")
 
 # System prompt that guides the LLM's behavior and capabilities
 # This helps the model understand its role and available tools
@@ -100,7 +119,7 @@ class MCPClient:
         self.config_file = 'mcp_config.json'
         self.dynamic_tools: List[Tool] = []  # List to store dynamic pydantic tools
 
-    async def connect_to_server(self):
+    async def connect_to_server(self) -> None:
         if self.connected:
             logging.info("Already connected to servers.")
             return
@@ -109,123 +128,108 @@ class MCPClient:
         try:
             with open(self.config_file) as f:
                 config = json.load(f)
+                logging.debug("Loaded configuration: %s", json.dumps(config, indent=2))
         except FileNotFoundError:
             logging.error(f"{self.config_file} file not found.")
             return
         except json.JSONDecodeError:
             logging.error(f"{self.config_file} is not a valid JSON file.")
             return
-        finally:
-            f.close()  # Ensure the file is always closed    
         
-        logging.debug("Available servers in config: ", list(config['mcpServers'].keys()))
-        logging.debug("Full config content: ", json.dumps(config, indent=2))
+        logging.debug("Available servers in config: %s", list(config['mcpServers'].keys()))
+        logging.debug("Full config content: %s", json.dumps(config, indent=2))
         
-        # Connect to all servers in config
+        # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
-            logging.debug(f"Attempting to load {server_name} server config...")
-            logging.debug("Server config found:", json.dumps(server_config, indent=2))
-            
-            server_params = StdioServerParameters(
-                command=server_config['command'],
-                args=server_config['args'],
-                env=server_config.get('env'),
-            )
-            logging.debug("Created server parameters:", server_params)
-           
-            try:
-                # Create and store session with server name as key
-                stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-                stdio, write = stdio_transport
-                session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
-                await session.initialize()
-                self.sessions[server_name] = session
+            logging.debug(f"Processing {server_name}  %s", json.dumps(server_config, indent=2))
+            logging.debug(f"Processing server configuration for {server_name}: %s", json.dumps(server_config, indent=2))
+            if server_config.get("enable", False):
+                logging.debug(f"Attempting to load {server_name} server config...")
+                logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
                 
-                # Create and store an Agent for this server
-                server_agent: Agent = Agent(
-                    model,
-                    system_prompt=(
-                        f"You are an AI assistant that helps interact with the {server_name} server. "
-                        "You will use the available tools to process requests and provide responses."
-                        "Make sure to always give feedback to the user after you have called the tool, especially when the tool does not generate any message itself."
+                server_params = StdioServerParameters(
+                    command=server_config['command'],
+                    args=server_config['args'],
+                    env=server_config.get('env'),
+                )
+                logging.debug("Created server parameters: command=%s, args=%s, env=%s", 
+                              server_params.command, server_params.args, server_params.env)
+               
+                try:
+                    # Create and store session with server name as key
+                    stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+                    stdio, write = stdio_transport
+                    session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+                    await session.initialize()
+                    self.sessions[server_name] = session
+                    
+                    # Create and store an Agent for this server
+                    server_agent: Agent = Agent(
+                        model,
+                        system_prompt=(
+                            f"You are an AI assistant that helps interact with the {server_name} server. "
+                            "You will use the available tools to process requests and provide responses."
+                            "Make sure to always give feedback to the user after you have called the tool, especially when the tool does not generate any message itself."
+                        )
                     )
-                )
-                self.agents[server_name] = server_agent
+                    self.agents[server_name] = server_agent
+                    
+                    # List available tools for this server
+                    response = await session.list_tools()
+                    server_tools = [{
+                        "name": f"{server_name}__{tool.name}",
+                        "description": tool.description,
+                        "input_schema": tool.inputSchema
+                    } for tool in response.tools]
+                except Exception as e:
+                    error_message = f"Failed to connect to and get tools from server {server_name}: {str(e)}"
+                    logging.error(error_message)
+                    return error_message
                 
-                # List available tools for this server
-                response = await session.list_tools()
-                server_tools = [{
-                    "name": f"{server_name}__{tool.name}",
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema
-                } for tool in response.tools]
-            except Exception as e:
-                error_message = f"Failed to connect to and get tools from server {server_name}: {str(e)}"
-                logging.error(error_message)
-                return error_message
-            
-            # Add server's tools to overall available tools
-            self.available_tools.extend(server_tools)
+                # Add server's tools to overall available tools
+                self.available_tools.extend(server_tools)
 
-            # Create corresponding dynamic pydantic tools
-            for tool in response.tools:
-                async def prepare_tool(
-                    ctx: RunContext[str], 
-                    tool_def: ToolDefinition,
-                    tool_name: str = tool.name,
-                    server: str = server_name
-                ) -> Union[ToolDefinition, None]:
-                    # Customize tool definition based on server context
-                    tool_def.name = f"{server}__{tool_name}"
-                    tool_def.description = f"Tool from {server} server: {tool.description}"
-                    logging.info(tool_def.description)
-                    return tool_def
+                # Create corresponding dynamic pydantic tools
+                for tool in response.tools:
+                    dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
+                    
+                    # Long descriptions beyond 1023 are not supported with OpenAI,
+                    # so replacing with a local file description optimized for use if it exists.
+                    file_name = f"./mcp-tool-description-overrides/{server_name}__{tool.name}"
 
-                async def tool_func(ctx: RunContext[Any], str_arg) -> str:
-                    agent_response = await server_agent.run_sync(str_arg)
-                    logging.debug(f"Server agent response: {agent_response}")
-                    logging.info(f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}")
-                    return f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}"               
-                
-                # Long descriptions beyond 1023 are not supported with OpenAI,
-                # so replacing with a local file description optimized for use if it exists.
-                file_name = f"./mcp-tool-description-overrides/{server_name}__{tool.name}"
+                    if os.path.exists(file_name):
+                        try:
+                            with open(file_name, 'r') as f:
+                                file_content = f.read()
+                            tool.description = file_content
+                        except Exception as e:
+                            logging.error(f"An error occurred while reading the file: {e}")
+                        finally: 
+                            f.close
+                    else:
+                        logging.debug(f"File '{file_name}' not found. Using default description")
 
-                if os.path.exists(file_name):
-                    try:
-                        with open(file_name, 'r') as f:
-                            file_content = f.read()
-                        tool.description = file_content
-                    except Exception as e:
-                        logging.error(f"An error occurred while reading the file: {e}")
-                    finally: 
-                        f.close
-                else:
-                    logging.debug(f"File '{file_name}' not found. Using default description")
-
-                dynamic_tool = Tool(
-                    tool_func,
-                    prepare=prepare_tool,
-                    name=f"{server_name}__{tool.name}",
-                    description=tool.description
-                )
-                self.tools[tool.name] = {
-                    "name": tool.name,
-                    "callable": self.call_tool(f"{server_name}__{tool.name}"),
-                    "schema": {
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.inputSchema,
+                    # Create corresponding dynamic pydantic tools
+                    dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
+                    self.tools[tool.name] = {
+                        "name": tool.name,
+                        "callable": self.call_tool(f"{server_name}__{tool.name}"),
+                        "schema": {
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "parameters": tool.inputSchema,
+                            },
                         },
-                    },
-                }
-                logging.debug(f"Added tool: {tool.name}")
-            
-            logging.info(f"Connected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
+                    }
+                    logging.debug(f"Added tool: {tool.name}")
+                
+                logging.info(f"Connected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
 
-            self.connected = True
+                self.connected = True
+            else:
+                logging.info(f"Server {server_name} is disabled. Skipping connection.")
         logging.info("Done connecting to servers.")
 
     async def add_mcp_configuration(self, query: str) -> Optional[str]:
@@ -239,6 +243,7 @@ class MCPClient:
             # Extract the JSON part of the query
             config_str = query
             new_config = json.loads(config_str)
+            print("New configuration to add:", json.dumps(new_config, indent=2))
 
             # Validate the new configuration
             if not isinstance(new_config, dict):
@@ -260,7 +265,7 @@ class MCPClient:
 
             # Load the existing config
             try:
-                with open("mcp_config.json", "r") as f:
+                with open(self.config_file, "r") as f:
                     config = json.load(f)
             except FileNotFoundError:
                 return "Error: mcp_config.json file not found."
@@ -271,18 +276,19 @@ class MCPClient:
             if server_name in config.get("mcpServers", {}):
                 return f"Error: Server '{server_name}' already exists in the configuration."
 
-            # Add the new server configuration
+            # Add the new server configuration with default enabled status
             if "mcpServers" not in config:
                 config["mcpServers"] = {}
 
             config["mcpServers"][server_name] = {
                 "command": server_config["command"],
                 "args": server_config["args"],
-                "env": server_config.get("env")  # Optional field
+                "env": server_config.get("env"),  # Optional field
+                "enable": server_config.get("enable", True)  # Default to True if not specified
             }
 
             # Save the updated config back to the file
-            with open("mcp_config.json", "w") as f:
+            with open(self.config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
             # Connect to the new server
@@ -296,7 +302,38 @@ class MCPClient:
             return f"Error adding MCP configuration: {str(e)}"
         return None
 
-    async def connect_to_server_with_config(self, server_name: str, server_config: dict):
+
+    async def drop_mcp_server(self, server_name: str) -> str:
+         """Remove an MCP server from the configuration and disconnect it."""                                                            
+         try:                                                                                                                            
+             with open(self.config_file, "r") as f:                                                                                     
+                 config = json.load(f)                                                                                                   
+                                                                                                                                         
+             if server_name not in config.get("mcpServers", {}):                                                                         
+                 return f"Error: Server '{server_name}' does not exist in the configuration."                                            
+                                                                                                                                         
+             # Remove the server from the configuration                                                                                  
+             del config["mcpServers"][server_name]                                                                                       
+                                                                                                                                         
+             # Save the updated config back to the file                                                                                  
+             with open(self.config_file, "w") as f:                                                                                     
+                 json.dump(config, f, indent=2)                                                                                          
+                                                                                                                                         
+             # Disconnect the server if it is connected                                                                                  
+             if server_name in self.sessions:                                                                                            
+                 del self.sessions[server_name]                                                                                          
+                 del self.agents[server_name]                                                                                            
+                                                                                                                                         
+             return f"Successfully removed and disconnected server '{server_name}'."                                                     
+                                                                                                                                         
+         except FileNotFoundError:                                                                                                       
+             return "Error: mcp_config.json file not found."                                                                             
+         except json.JSONDecodeError:                                                                                                    
+             return "Error: mcp_config.json is not a valid JSON file."                                                                   
+         except Exception as e:                                                                                                          
+             return f"Error removing MCP server: {str(e)}"      
+         
+    async def connect_to_server_with_config(self, server_name: str, server_config: dict) -> None:
         """Connect to a server using the provided configuration."""
         server_params = StdioServerParameters(
             command=server_config['command'],
@@ -322,14 +359,23 @@ class MCPClient:
     async def list_mcp_servers(self) -> str:
         """List all MCP servers in the configuration."""
         try:
-            with open("mcp_config.json", "r") as f:
+            with open(self.config_file, "r") as f:
                 config = json.load(f)
-            servers = config.get("mcpServers", {}).keys()
-            return "MCP Servers: " + ", ".join(servers)
+            # Filter enabled servers
+            enabled_servers = [
+                server_name for server_name, server_config in config.get("mcpServers", {}).items()
+                if server_config.get("enable", True)
+            ]
+            disabled_servers = [
+                server_name for server_name, server_config in config.get("mcpServers", {}).items()
+                if not server_config.get("enable", True)
+            ]
+            suggestion = "\n - Use /functions &lt;server_name&gt; to list functions provided by a specific server."
+            return f"**Enabled servers:** \n 1. {'\n 1. '.join(enabled_servers)}. \n\nDisabled servers: {', '.join(disabled_servers)}. \nNext command suggestion: {suggestion}"
         except FileNotFoundError:
-            return "Error: mcp_config.json file not found."
+            return f"Error: {self.config_file} file not found."
         except json.JSONDecodeError:
-            return "Error: mcp_config.json is not a valid JSON file."
+            return f"Error: {self.config_file} is not a valid JSON file."
 
     async def list_server_functions(self, server_name: str) -> str:
         """List all functions provided by a specific MCP server."""
@@ -341,15 +387,53 @@ class MCPClient:
             for tool in response.tools:
                 parameters = tool.inputSchema.get('properties', {})
                 functions.append({
-                    "name": tool.name,
+                    "function name": tool.name,
                     "parameters": parameters
                 })
-            formatted_output = json.dumps(functions, indent=2)
-            return f"Functions for server '{server_name}':\n```\n{formatted_output}\n```"
+            #formatted_output = json.dumps(functions, indent=2)
+            return f"Functions for server '{server_name}':\n" + json_to_markdown(functions)
+
         except Exception as e:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
+        """Clean up resources."""
+        logging.debug("Cleaning up resources...")
+        await self.exit_stack.aclose()
+        self.sessions.clear()
+        self.available_tools.clear()
+        self.connected = False
+        logging.info("Cleanup completed.")
+
+    async def toggle_server_status(self, server_names: List[str], enable: bool) -> str:
+        """Enable or disable specific MCP servers."""
+        try:
+            with open(self.config_file, "r") as f:
+                config = json.load(f)
+
+            results = []
+            for server_name in server_names:
+                if server_name not in config.get("mcpServers", {}):
+                    results.append(f"Error: Server '{server_name}' does not exist in the configuration.")
+                    continue
+
+                # Update the enabled status
+                config["mcpServers"][server_name]["enable"] = enable
+                status = "enabled" if enable else "disabled"
+                results.append(f"Successfully {status} server '{server_name}'.")
+
+            # Save the updated config back to the file
+            with open(self.config_file, "w") as f:
+                json.dump(config, f, indent=2)
+
+            return "\n".join(results)
+
+        except FileNotFoundError:
+            return "Error: mcp_config.json file not found."
+        except json.JSONDecodeError:
+            return "Error: mcp_config.json is not a valid JSON file."
+        except Exception as e:
+            return f"Error toggling server status: {str(e)}"
         """Clean up resources."""
         logging.debug("Cleaning up resources...")
         await self.exit_stack.aclose()
@@ -445,20 +529,50 @@ class MCPClient:
  
         return callable
     
-    async def handle_slash_commands(self, query) -> str:
-        """
-        Handle slash commands for adding MCP servers and listing available functions.
-        """
+    def create_dynamic_tool(self, tool, server_name: str, server_agent: Agent) -> Tool:
+        """Create a dynamic tool for a given server and tool."""
+        async def prepare_tool(
+            ctx: RunContext[str], 
+            tool_def: ToolDefinition,
+            tool_name: str = tool.name,
+            server: str = server_name
+        ) -> Union[ToolDefinition, None]:
+            # Customize tool definition based on server context
+            tool_def.name = f"{server}__{tool_name}"
+            tool_def.description = f"Tool from {server} server: {tool.description}"
+            logging.info(tool_def.description)
+            return tool_def
+
+        async def tool_func(ctx: RunContext[Any], str_arg) -> str:
+            agent_response = await server_agent.run_sync(str_arg)
+            logging.debug(f"Server agent response: {agent_response}")
+            logging.info(f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}")
+            return f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}"
+
+        return Tool(
+            tool_func,
+            prepare=prepare_tool,
+            name=f"{server_name}__{tool.name}",
+            description=tool.description
+        )
+    async def handle_slash_commands(self, query: str) -> str:
+        """Handle slash commands for adding MCP servers and listing available functions."""
         try:
             command, *args = query.split()
             if command == "/addMcpServer":
                 result = await self.add_mcp_configuration(" ".join(args))
             elif command == "/list":
-                result =  await self.list_mcp_servers()
+                result = await self.list_mcp_servers()
+            elif command == "/enable" and args:
+                result = await self.toggle_server_status(args, True)  # Pass list of server names
+            elif command == "/disable" and args:
+                result = await self.toggle_server_status(args, False)  # Pass list of server names
             elif command == "/functions" and args:
-                result =  await self.list_server_functions(args[0])
+                result = await self.list_server_functions(args[0])
+            elif command == "/dropMcpServer" and args:
+                result = await self.drop_mcp_server(args[0])
             else:
-                result =  "Error: Invalid command or missing arguments."
+                result = "Error: Invalid command or missing arguments."
         except Exception as e:
             logging.error(f"Error handling slash commands: {e}")
             return None
@@ -581,6 +695,27 @@ async def agent_loop(query: str, tools: dict, messages: List[dict] = None):
     # Return the LLM response and messages
     return new_response.choices[0].message.content, messages
 
+def json_to_markdown(data, indent=0):
+    markdown = ""
+    prefix = "  " * indent  # Indentation for nested structures
+
+    if isinstance(data, dict):
+        for key, value in data.items():
+            markdown += f"{prefix}- **{key}**: "
+            if isinstance(value, (dict, list)):
+                markdown += "\n" + json_to_markdown(value, indent + 1)
+            else:
+                markdown += f"{value}\n"
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, (dict, list)):
+                markdown += f"{prefix}- \n{json_to_markdown(item, indent + 1)}"
+            else:
+                markdown += f"{prefix}- {item}\n"
+    else:
+        markdown += f"{prefix}- {data}\n"
+
+    return markdown
 
 async def main():
     """
