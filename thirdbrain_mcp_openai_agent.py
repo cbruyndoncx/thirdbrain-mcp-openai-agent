@@ -2,7 +2,7 @@ from __future__ import annotations as _annotations
 
 import httpx
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Security, Depends, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, Security, Depends
 from contextlib import asynccontextmanager
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware

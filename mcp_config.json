@@ -36,17 +36,6 @@
       "env": null,
       "enable": true
     },
-    "fetch": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "mcp/fetch"
-      ],
-      "env": null,
-      "enable": true
-    },
     "github": {
       "command": "docker",
       "args": [
