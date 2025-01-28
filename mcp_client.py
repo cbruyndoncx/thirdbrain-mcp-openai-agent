@@ -119,96 +119,94 @@ class MCPClient:
         logging.debug("Available servers in config: %s", list(config['mcpServers'].keys()))
         logging.debug("Full config content: %s", json.dumps(config, indent=2))
         
-        # Connect to all servers in config
+        # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
-            # Check if the server is enabled
-            if not server_config.get("enabled", True):
-                logging.info(f"Server {server_name} is disabled. Skipping connection.")
-                continue
-
-            logging.debug(f"Attempting to load {server_name} server config...")
-            logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
-            
-            server_params = StdioServerParameters(
-                command=server_config['command'],
-                args=server_config['args'],
-                env=server_config.get('env'),
-            )
-            logging.debug("Created server parameters:", server_params)
-           
-            try:
-                # Create and store session with server name as key
-                stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
-                stdio, write = stdio_transport
-                session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
-                await session.initialize()
-                self.sessions[server_name] = session
+            if server_config.get("enabled", True):
+                logging.debug(f"Attempting to load {server_name} server config...")
+                logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
                 
-                # Create and store an Agent for this server
-                server_agent: Agent = Agent(
-                    model,
-                    system_prompt=(
-                        f"You are an AI assistant that helps interact with the {server_name} server. "
-                        "You will use the available tools to process requests and provide responses."
-                        "Make sure to always give feedback to the user after you have called the tool, especially when the tool does not generate any message itself."
-                    )
+                server_params = StdioServerParameters(
+                    command=server_config['command'],
+                    args=server_config['args'],
+                    env=server_config.get('env'),
                 )
-                self.agents[server_name] = server_agent
+                logging.debug("Created server parameters:", server_params)
+               
+                try:
+                    # Create and store session with server name as key
+                    stdio_transport = await self.exit_stack.enter_async_context(stdio_client(server_params))
+                    stdio, write = stdio_transport
+                    session = await self.exit_stack.enter_async_context(ClientSession(stdio, write))
+                    await session.initialize()
+                    self.sessions[server_name] = session
+                    
+                    # Create and store an Agent for this server
+                    server_agent: Agent = Agent(
+                        model,
+                        system_prompt=(
+                            f"You are an AI assistant that helps interact with the {server_name} server. "
+                            "You will use the available tools to process requests and provide responses."
+                            "Make sure to always give feedback to the user after you have called the tool, especially when the tool does not generate any message itself."
+                        )
+                    )
+                    self.agents[server_name] = server_agent
+                    
+                    # List available tools for this server
+                    response = await session.list_tools()
+                    server_tools = [{
+                        "name": f"{server_name}__{tool.name}",
+                        "description": tool.description,
+                        "input_schema": tool.inputSchema
+                    } for tool in response.tools]
+                except Exception as e:
+                    error_message = f"Failed to connect to and get tools from server {server_name}: {str(e)}"
+                    logging.error(error_message)
+                    return error_message
                 
-                # List available tools for this server
-                response = await session.list_tools()
-                server_tools = [{
-                    "name": f"{server_name}__{tool.name}",
-                    "description": tool.description,
-                    "input_schema": tool.inputSchema
-                } for tool in response.tools]
-            except Exception as e:
-                error_message = f"Failed to connect to and get tools from server {server_name}: {str(e)}"
-                logging.error(error_message)
-                return error_message
-            
-            # Add server's tools to overall available tools
-            self.available_tools.extend(server_tools)
-
-            # Create corresponding dynamic pydantic tools
-            for tool in response.tools:
-                dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
-                
-                # Long descriptions beyond 1023 are not supported with OpenAI,
-                # so replacing with a local file description optimized for use if it exists.
-                file_name = f"./mcp-tool-description-overrides/{server_name}__{tool.name}"
-
-                if os.path.exists(file_name):
-                    try:
-                        with open(file_name, 'r') as f:
-                            file_content = f.read()
-                        tool.description = file_content
-                    except Exception as e:
-                        logging.error(f"An error occurred while reading the file: {e}")
-                    finally: 
-                        f.close
-                else:
-                    logging.debug(f"File '{file_name}' not found. Using default description")
+                # Add server's tools to overall available tools
+                self.available_tools.extend(server_tools)
 
                 # Create corresponding dynamic pydantic tools
-                dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
-                self.tools[tool.name] = {
-                    "name": tool.name,
-                    "callable": self.call_tool(f"{server_name}__{tool.name}"),
-                    "schema": {
-                        "type": "function",
-                        "function": {
-                            "name": tool.name,
-                            "description": tool.description,
-                            "parameters": tool.inputSchema,
-                        },
-                    },
-                }
-                logging.debug(f"Added tool: {tool.name}")
-            
-            logging.info(f"Connected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
+                for tool in response.tools:
+                    dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
+                    
+                    # Long descriptions beyond 1023 are not supported with OpenAI,
+                    # so replacing with a local file description optimized for use if it exists.
+                    file_name = f"./mcp-tool-description-overrides/{server_name}__{tool.name}"
 
-            self.connected = True
+                    if os.path.exists(file_name):
+                        try:
+                            with open(file_name, 'r') as f:
+                                file_content = f.read()
+                            tool.description = file_content
+                        except Exception as e:
+                            logging.error(f"An error occurred while reading the file: {e}")
+                        finally: 
+                            f.close
+                    else:
+                        logging.debug(f"File '{file_name}' not found. Using default description")
+
+                    # Create corresponding dynamic pydantic tools
+                    dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
+                    self.tools[tool.name] = {
+                        "name": tool.name,
+                        "callable": self.call_tool(f"{server_name}__{tool.name}"),
+                        "schema": {
+                            "type": "function",
+                            "function": {
+                                "name": tool.name,
+                                "description": tool.description,
+                                "parameters": tool.inputSchema,
+                            },
+                        },
+                    }
+                    logging.debug(f"Added tool: {tool.name}")
+                
+                logging.info(f"Connected to server {server_name} with tools: %s", [tool["name"] for tool in server_tools])
+
+                self.connected = True
+            else:
+                logging.info(f"Server {server_name} is disabled. Skipping connection.")
         logging.info("Done connecting to servers.")
 
     async def add_mcp_configuration(self, query: str) -> Optional[str]:
