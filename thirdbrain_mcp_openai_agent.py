@@ -226,7 +226,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Set the logging level based on the argument
-    logging_level = getattr(logging, args.log_level.upper())
+    logging_level = getattr(logging, args.log_level.upper(), logging.DEBUG)
     print(f"Parsed log level: {args.log_level.upper()} -> {logging_level}")
     logging.basicConfig(level=logging_level)
     print(f"Logging level set to: {logging.getLevelName(logging_level)}")
