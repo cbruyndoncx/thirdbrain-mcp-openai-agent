@@ -122,7 +122,7 @@ class MCPClient:
         # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
             logging.debug(f"Processing {server_name}  %s", json.dumps(server_config, indent=2))
-            print(f"Processing server configuration for {server_name}:", json.dumps(server_config, indent=2))
+            logging.debug(f"Processing server configuration for {server_name}: %s", json.dumps(server_config, indent=2))
             if server_config.get("enable", False):
                 logging.debug(f"Attempting to load {server_name} server config...")
                 logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
