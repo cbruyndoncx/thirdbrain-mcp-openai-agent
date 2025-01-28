@@ -49,7 +49,7 @@
       "env": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": "<your token>"
       },
-      "enable": true
+      "enable": false
     }
   }
 }
