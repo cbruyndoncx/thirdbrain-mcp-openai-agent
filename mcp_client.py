@@ -315,7 +315,6 @@ class MCPClient:
                                                                                                                                          
              # Disconnect the server if it is connected                                                                                  
              if server_name in self.sessions:                                                                                            
-                 await self.sessions[server_name].close()                                                                                
                  del self.sessions[server_name]                                                                                          
                  del self.agents[server_name]                                                                                            
                                                                                                                                          
