@@ -26,7 +26,7 @@ from pydantic_ai.models.openai import OpenAIModel
 
 # Get the logger used by uvicorn
 logging = logging.getLogger("uvicorn")
-logging.setLevel("INFO")
+logging.setLevel("DEBUG")
 
 # Load environment variables from .env
 load_dotenv()  
@@ -121,6 +121,7 @@ class MCPClient:
         
         # Connect only to enabled servers in config
         for server_name, server_config in config['mcpServers'].items():
+            logging.debug(f"Processing {server_name}  %s", json.dumps(server_config, indent=2))
             if server_config.get("enable", True):
                 logging.debug(f"Attempting to load {server_name} server config...")
                 logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
