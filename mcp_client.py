@@ -100,7 +100,7 @@ class MCPClient:
         self.config_file = 'mcp_config.json'
         self.dynamic_tools: List[Tool] = []  # List to store dynamic pydantic tools
 
-    async def connect_to_server(self):
+    async def connect_to_server(self) -> None:
         if self.connected:
             logging.info("Already connected to servers.")
             return
@@ -115,16 +115,14 @@ class MCPClient:
         except json.JSONDecodeError:
             logging.error(f"{self.config_file} is not a valid JSON file.")
             return
-        finally:
-            f.close()  # Ensure the file is always closed    
         
-        logging.debug("Available servers in config: ", list(config['mcpServers'].keys()))
-        logging.debug("Full config content: ", json.dumps(config, indent=2))
+        logging.debug("Available servers in config: %s", list(config['mcpServers'].keys()))
+        logging.debug("Full config content: %s", json.dumps(config, indent=2))
         
         # Connect to all servers in config
         for server_name, server_config in config['mcpServers'].items():
             logging.debug(f"Attempting to load {server_name} server config...")
-            logging.debug("Server config found:", json.dumps(server_config, indent=2))
+            logging.debug("Server config found: %s", json.dumps(server_config, indent=2))
             
             server_params = StdioServerParameters(
                 command=server_config['command'],
@@ -169,23 +167,7 @@ class MCPClient:
 
             # Create corresponding dynamic pydantic tools
             for tool in response.tools:
-                async def prepare_tool(
-                    ctx: RunContext[str], 
-                    tool_def: ToolDefinition,
-                    tool_name: str = tool.name,
-                    server: str = server_name
-                ) -> Union[ToolDefinition, None]:
-                    # Customize tool definition based on server context
-                    tool_def.name = f"{server}__{tool_name}"
-                    tool_def.description = f"Tool from {server} server: {tool.description}"
-                    logging.info(tool_def.description)
-                    return tool_def
-
-                async def tool_func(ctx: RunContext[Any], str_arg) -> str:
-                    agent_response = await server_agent.run_sync(str_arg)
-                    logging.debug(f"Server agent response: {agent_response}")
-                    logging.info(f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}")
-                    return f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}"               
+                dynamic_tool = self.create_dynamic_tool(tool, server_name, server_agent)
                 
                 # Long descriptions beyond 1023 are not supported with OpenAI,
                 # so replacing with a local file description optimized for use if it exists.
@@ -297,7 +279,7 @@ class MCPClient:
         return None
 
 
-    async def drop_mcp_server(self, server_name: str) -> str:                                                                           
+    async def drop_mcp_server(self, server_name: str) -> str:
          """Remove an MCP server from the configuration and disconnect it."""                                                            
          try:                                                                                                                            
              with open("mcp_config.json", "r") as f:                                                                                     
@@ -327,7 +309,7 @@ class MCPClient:
          except Exception as e:                                                                                                          
              return f"Error removing MCP server: {str(e)}"      
          
-    async def connect_to_server_with_config(self, server_name: str, server_config: dict):
+    async def connect_to_server_with_config(self, server_name: str, server_config: dict) -> None:
         """Connect to a server using the provided configuration."""
         server_params = StdioServerParameters(
             command=server_config['command'],
@@ -380,7 +362,7 @@ class MCPClient:
         except Exception as e:
             return f"Error listing functions for server '{server_name}': {str(e)}"
 
-    async def cleanup(self):
+    async def cleanup(self) -> None:
         """Clean up resources."""
         logging.debug("Cleaning up resources...")
         await self.exit_stack.aclose()
@@ -476,7 +458,32 @@ class MCPClient:
  
         return callable
     
-    async def handle_slash_commands(self, query: str) -> str:
+    def create_dynamic_tool(self, tool, server_name: str, server_agent: Agent) -> Tool:
+        """Create a dynamic tool for a given server and tool."""
+        async def prepare_tool(
+            ctx: RunContext[str], 
+            tool_def: ToolDefinition,
+            tool_name: str = tool.name,
+            server: str = server_name
+        ) -> Union[ToolDefinition, None]:
+            # Customize tool definition based on server context
+            tool_def.name = f"{server}__{tool_name}"
+            tool_def.description = f"Tool from {server} server: {tool.description}"
+            logging.info(tool_def.description)
+            return tool_def
+
+        async def tool_func(ctx: RunContext[Any], str_arg) -> str:
+            agent_response = await server_agent.run_sync(str_arg)
+            logging.debug(f"Server agent response: {agent_response}")
+            logging.info(f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}")
+            return f"Tool {tool.name} called with {str_arg}. Agent response: {agent_response}"
+
+        return Tool(
+            tool_func,
+            prepare=prepare_tool,
+            name=f"{server_name}__{tool.name}",
+            description=tool.description
+        )
         """Handle slash commands for adding MCP servers and listing available functions."""
         try:
             command, *args = query.split()
