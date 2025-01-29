@@ -13,5 +13,4 @@ COPY . .
 EXPOSE ${PORT}
 
 # Command to run the application
-# Feel free to change sample_supabase_agent to sample_postgres_agent
-CMD ["sh", "-c", "uvicorn sample_supabase_agent:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn thirdbrain-mcp-openai-agent:app --host 0.0.0.0 --port ${PORT}"]
