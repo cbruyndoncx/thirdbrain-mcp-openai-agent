@@ -6,13 +6,15 @@
         "-m",
         "mcp_server_time",
         "--local-timezone=America/New_York"
-      ]
+      ],
+      "enable": true
     },
     "weather": {
       "command": "python",
       "args": [
         "./weather-server-python/src/weather/server.py"
-      ]
+      ],
+      "enable": true
     },
     "sequentialthinking": {
       "command": "docker",
@@ -21,7 +23,8 @@
         "--rm",
         "-i",
         "mcp/sequentialthinking"
-      ]
+      ],
+      "enable": true
     },
     "memory": {
       "command": "docker",
@@ -31,7 +34,8 @@
         "--rm",
         "mcp/memory"
       ],
-      "env": null
+      "env": null,
+      "enable": true
     },
     "fetch": {
       "command": "docker",
@@ -41,61 +45,16 @@
         "--rm",
         "mcp/fetch"
       ],
-      "env": null
+      "env": null,
+      "enable": true
     },
     "mcp-pandoc": {
       "command": "uvx",
       "args": [
         "mcp-pandoc"
       ],
-      "env": null
-    },
-    "mcp-obsidian": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "--rm",
-        "--add-host=host.docker.internal:host-gateway",
-        "-e",
-        "OBSIDIAN_API_KEY=ac8a68c6174030de4a565892d7dc07f4739b8d7c59a5a37e223531415ef6caf5",
-        "ghcr.io/astral-sh/uv:python3.13-bookworm",
-        "uvx",
-        "mcp-obsidian"
-      ],
-      "env": {"OBSIDIAN_API_KEY" : "ac8a68c6174030de4a565892d7dc07f4739b8d7c59a5a37e223531415ef6caf5"}
-    },
-    "npx-service": {
-      "command": "docker",
-      "args": [
-        "run",
-        "-i",
-        "npx-service",
-        "https://github.com/cbruyndoncx/mcp-rtfm.git"
-      ],
       "env": null,
-      "enable": false
-    },
-    "mcp_docker": {
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "--pull",
-        "always",
-        "-v",
-        "/var/run/docker.sock:/var/run/docker.sock",
-        "--mount",
-        "type=volume,source=docker-prompts,target=/prompts",
-        "mcp/docker:latest",
-        "serve",
-        "--mcp",
-        "--register",
-        "github:docker/labs-ai-tools-for-devs?path=prompts/bootstrap.md"
-      ],
-      "env": null,
-      "enable": false
+      "enable": true
     }
   }
 }

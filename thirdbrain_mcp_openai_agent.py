@@ -1,19 +1,31 @@
 from __future__ import annotations as _annotations
 
 import httpx
-from typing import List, Optional, Dict, Any
+from typing import Optional, Any, Dict
 from fastapi import FastAPI, HTTPException, Security, Depends
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from pathlib import Path
 import os
+from exceptions import ConfigurationError, ToolError, DatabaseConnectionError
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 # mcp client for pydantic ai
 from mcp_client import MCPClient, Deps, logging, agent_loop
+
+def validate_env_vars(required_vars: list[str]) -> None:
+    """Validate that all required environment variables are set."""
+    missing_vars = [var for var in required_vars if not os.getenv(var)]
+    if missing_vars:
+        logging.error(f"Missing environment variables: {', '.join(missing_vars)}")
+        raise ConfigurationError(f"Missing environment variables: {', '.join(missing_vars)}")
 
 # Load environment variables
 load_dotenv()
@@ -25,36 +37,40 @@ supabase: Client = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup logic
-    logging.debug("Starting up the FastAPI application...")
+    logger.info("Starting up the FastAPI application.")
 
-    # Check environment variables
-    required_env_vars = ["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "API_BEARER_TOKEN"]
-    for var in required_env_vars:
-        if not os.getenv(var):
-            logging.error(f"Environment variable {var} is not set.")
-            raise RuntimeError(f"Environment variable {var} is required but not set.")
+    # Validate environment variables
+    try:
+        validate_env_vars(["SUPABASE_URL", "SUPABASE_SERVICE_KEY", "API_BEARER_TOKEN"])
+    except ConfigurationError as e:
+        logger.error(f"Configuration error during startup: {e}")
+        raise
 
-    # Initialize Supabase client
-    global supabase
-    supabase = create_client(
-        os.getenv("SUPABASE_URL"),
-        os.getenv("SUPABASE_SERVICE_KEY")
-    )
-    if not supabase:
-        logging.error("Supabase client is not initialized. Please check your environment variables.")
-        raise RuntimeError("Supabase client initialization failed.")
+    try:
+        # Initialize Supabase client
+        global supabase
+        supabase = create_client(
+            os.getenv("SUPABASE_URL"),
+            os.getenv("SUPABASE_SERVICE_KEY")
+        )
+        if not supabase:
+            logging.error("Supabase client is not initialized. Please check your environment variables.")
+            raise DatabaseConnectionError("Supabase client initialization failed.")
 
-    # Initialize MCPClient and connect to server
-    global mcp_client
-    mcp_client = MCPClient()
-    await mcp_client.connect_to_server()
-    logging.info("Startup tasks completed successfully.")
+        # Initialize MCPClient and connect to server
+        global mcp_client
+        mcp_client = MCPClient()
+        await mcp_client.connect_to_server()
+        logging.info("Startup tasks completed successfully.")
+    except Exception as e:
+        logger.error(f"Error during startup: {e}")
+        raise
 
     # Yield control back to FastAPI
     yield
 
     # Shutdown logic
-    logging.debug("Shutting down the FastAPI application...")
+    logger.info("Shutting down the FastAPI application.")
     await mcp_client.cleanup()  
     logging.info("Shutdown tasks completed successfully.")
 
@@ -95,7 +111,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
         )
     return True
 
-async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
+async def get_conversation_history(session_id: str, limit: int = 10) -> list[dict[str, Any]]:
     """Fetch the most recent conversation history for a session."""
     try:
         response = supabase.table("messages") \
@@ -105,20 +121,13 @@ async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[D
             .limit(limit) \
             .execute()
         
-        # Convert to list and reverse to get chronological order
-        messages = response.data[::-1]
-        return messages
+        return response.data[::-1]  # Reverse to get chronological order
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
+        raise DatabaseConnectionError(f"Failed to fetch conversation history: {str(e)}")
 
-async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
+async def save_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
     """Store a message in the Supabase messages table."""
-    message_obj = {
-        "type": message_type,
-        "content": content
-    }
-    if data:
-        message_obj["data"] = data
+    message_obj = {"type": message_type, "content": content, **({"data": data} if data else {})}
 
     try:
         supabase.table("messages").insert({
@@ -139,12 +148,12 @@ async def thirdbrain_mcp_openai_agent(
 ):
     try:
         # Fetch conversation history from the DB
-        conversation_history = await fetch_conversation_history(request.session_id)
+        conversation_history = await get_conversation_history(request.session_id)
         
         # Convert conversation history to format expected by agent
         messages = []
         for msg in conversation_history:
-            logging.debug("msg: ", msg)
+            #logger.debug("Processing message: %s", msg)
             msg_data = msg["message"]
             msg_type = msg_data["type"]
             msg_content = msg_data["content"]
@@ -159,16 +168,20 @@ async def thirdbrain_mcp_openai_agent(
             else:
                 logging.debug("this was most likely an error message stored in the messages table")
 
-        # Store user's query
-        await store_message(
-            session_id=request.session_id,
-            message_type="human",
-            content=request.query
-        ) 
+        # Store user's query if it doesn't start with a slash
+        if not request.query.startswith("/"):
+            await save_message(
+                session_id=request.session_id,
+                message_type="human",
+                content=request.query
+            )
 
+    except ToolError as e:
+        logger.error(f"Tool error: {e}")
+        raise HTTPException(status_code=500, detail=f"Tool error: {str(e)}")
     except Exception as e:
-        logging.error(f"Error processing request - part 1: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
+        logger.exception("Unexpected error during request processing")
+        raise HTTPException(status_code=500, detail="Internal server error")
     
 
     # Get available tools and prepare them for the LLM
@@ -185,20 +198,22 @@ async def thirdbrain_mcp_openai_agent(
             if request.query.startswith("/"):
                 result = await mcp_client.handle_slash_commands(request.query)
             else:     
-                result, messages = await agent_loop(request.query, tools, messages)
+                result, messages = await agent_loop(request.query, tools, messages, deps)
+            if request.query.startswith("/"):
+                # Prepend the result with the slash command and server name
+                command_info = f"Executed command: {request.query.split()[0]} {request.query.split()[1] if len(request.query.split()) > 1 else ''}".strip()
+                result = f"{command_info}\n{result}"
             logging.info(f"Result: {result}")
-                
         except KeyboardInterrupt:
-            logging.debug("Keyboard interrupt detected.")
-            logging.debug("Exiting...")
+            logger.info("Keyboard interrupt detected. Exiting...")
             return
         except Exception as e:
             logging.error(f"Error in agent loop: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Error processung query for MCP request: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing query: {str(e)}")
 
         try:
             # Store agent's response
-            await store_message(
+            await save_message(
                 session_id=request.session_id,
                 message_type="ai",
                 content=result,
@@ -208,7 +223,7 @@ async def thirdbrain_mcp_openai_agent(
             return AgentResponse(success=True)
         except Exception as e:
             # Store error message in conversation
-            await store_message(
+            await save_message(
                 session_id=request.session_id,
                 message_type="ai",
                 content="I apologize, but I encountered an error processing your request.",

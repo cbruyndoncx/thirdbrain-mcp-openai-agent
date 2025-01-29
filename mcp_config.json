@@ -6,7 +6,8 @@
         "-m",
         "mcp_server_time",
         "--local-timezone=America/New_York"
-      ]
+      ],
+      "enable": true
     },
     "weather": {
       "command": "python",
