@@ -11,8 +11,14 @@ This enables the use of MCP servers across a much wider range of models such as:
 > It is an extreme DRY concept for distributed agentic systems that hides the implementation details. 
 > For more information see https://modelcontextprotocol.org
 
+## Demo
+### Planning for skiweekend
+The agent has built-in python code for weather forecast service for US. 
+I asked where to go skiing around Denver next weekend and did some follow-up calls to get exact weather conditions and a comparison between ski resorts demonstrating iterative tool calling until the weather forecast for each ski resort is obtained and recommendations made.
+![Demo Skiweekend (animated gif)](docs/Skiweekend.gif)
+
 ## Installation
-If you are unfamiliar with the hackaton agents, follow the detailed installation instructions provided for the hackathon.
+If you are unfamiliar with the hackathon agents, follow the detailed installation instructions provided for the hackathon.
 [LiveAgentStudio_README.md]
 
 ### Specifics for the MCP OpenAI agent
@@ -83,6 +89,8 @@ python mcp_client.py
 ### Slash commands within the chatbot (agent and cli)
 
 The management of the mcp_config.json file is done through slash commands. We want this to be really deterministic when managing the configuration.
+
+
 ![List mcp servers and request functions supported by mcp server](docs/ThirdBrain-mcp-openai-agent-Command-list-functions.png)
 
 #### /list
