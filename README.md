@@ -96,7 +96,7 @@ The management of the mcp_config.json file is done through slash commands. We wa
 #### /list
 Lists all enabled and disabled mcp servers known on the system
 
-#### /functions <server-name>
+#### /functions server-name
 Lists all the functions with their signature for the particular mcp server
 
 #### /addMcpServer {servername: { command: X , args: [], env: {} }}
