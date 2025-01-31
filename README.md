@@ -19,7 +19,7 @@ I asked where to go skiing around Denver next weekend and did some follow-up cal
 
 ## Installation
 If you are unfamiliar with the hackathon agents, follow the detailed installation instructions provided for the hackathon.
-[LiveAgentStudio_README.md]
+[Live Agent Studio Hackaton Readme](LiveAgentStudio_README.md)
 
 ### Specifics for the MCP OpenAI agent
 This agent has uses or has been tested with:
@@ -125,6 +125,30 @@ This command removes an existing MCP server configuration. Provide the server na
 Example:
 ```/dropMcpServer server1```
 
+## Verified working mcp configurations
+### Official
+- No issues found with the @modelcontextprotocol.
+- They appear now to have both native (npv/uvx) and docker installation instructions
+
+Popular: 
+* Fetch: getting website info
+```
+/addMcpServer { "fetch": { "command": "docker", "args": ["run", "-i", "--rm", "mcp/fetch"] } }
+```
+### Unofficial / Community Released
+
+#### aidd-ai-software-development-utilities
+Good comprehensive readme at
+Github repo: [skydeckai/mcp-server-aidd](https://github.com/skydeckai/mcp-server-aidd)
+
+```
+/addMcpServer { "aidd-ai-software-development-utilities": { "command": "uvx", "args": ["mcp-server-aidd"] } }
+```
+#### pandoc
+Pandoc is a well known packages used for all kinds of file conversions and has many advanced features like Word templating, but not sure if everything is supported in the mcp server implementation.
+```
+/addMcpServer { "mcp-pandoc": { "command": "uvx", "args": [ "mcp-pandoc" ] } }
+```
 
 ## FAQ
 1. **Why not use pydantic-ai ?** : See [#Known issues] section
